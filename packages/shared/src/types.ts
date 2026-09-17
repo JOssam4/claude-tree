@@ -85,3 +85,18 @@ export interface BackfillSummary {
   sidechainLinksOrphaned: number;
   warnings: string[];
 }
+
+/**
+ * Payload emitted whenever the live watcher (packages/server/src/indexer/watcher.ts)
+ * commits new nodes for a session — either from a brand-new file or from
+ * tailing an appended one. Shape matches the WS `tree:update` message
+ * described in the plan (`{ type: "tree:update", projectSlug, sessionId,
+ * addedNodeUuids }`); defined here now (Milestone 2) so the future WebSocket
+ * server (Milestone 3) can wrap this directly into that message without the
+ * watcher module needing to change.
+ */
+export interface TreeUpdateEvent {
+  projectSlug: string;
+  sessionId: string;
+  addedNodeUuids: string[];
+}

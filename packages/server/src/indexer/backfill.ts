@@ -13,19 +13,20 @@ import readline from "node:readline";
 import type { BackfillSummary } from "@claude-tree/shared";
 import { CLAUDE_PROJECTS_DIR } from "../config.js";
 import type { DB } from "../db/client.js";
+import { createAccumulator, indexRawLine, prepareInsertNodeStmt } from "./lineIndexer.js";
 import { parseLine } from "./jsonlParser.js";
 import { linkSidechain, parseAgentIdFromFilename } from "./sidechainLinker.js";
-
-const TITLE_FALLBACK_MAX_LEN = 200;
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-interface SessionIndexResult {
+export interface SessionIndexResult {
   createdAt: string;
   aiTitle: string | null;
   nodeCount: number;
+  /** uuids that were ACTUALLY newly inserted (not ones already present from a prior run). Used by the watcher's 'add'/compaction-reindex path to build its tree:update event payload. */
+  addedNodeUuids: string[];
   /** {toolUseResult.agentId -> node uuid}, collected while indexing this session's chain, for later subagent sidechain joins. */
   agentIdToNodeUuid: Map<string, string>;
   cwd: string | null;
@@ -44,22 +45,18 @@ interface SessionIndexResult {
   bytesRead: number;
 }
 
-/** Streams one session (or subagent sidechain) .jsonl file into the `nodes` table in a single forward pass. */
-async function indexSessionFile(db: DB, filePath: string, sessionId: string): Promise<SessionIndexResult> {
-  const agentIdToNodeUuid = new Map<string, string>();
-  const warnings: string[] = [];
-  let seq = 0;
-  let createdAt: string | null = null;
-  let aiTitle: string | null = null;
-  let titleFallback: string | null = null;
-  let cwd: string | null = null;
-
-  // uuid is PRIMARY KEY; OR IGNORE makes re-running backfill against an
-  // already-populated DB safe (historical lines are immutable once written).
-  const insertNode = db.prepare(
-    `INSERT OR IGNORE INTO nodes (uuid, session_id, parent_uuid, type, role, content_text, content_raw, timestamp, seq)
-     VALUES (@uuid, @sessionId, @parentUuid, @type, @role, @contentText, @contentRaw, @timestamp, @seq)`,
-  );
+/**
+ * Streams one session (or subagent sidechain) .jsonl file into the `nodes`
+ * table in a single forward pass, ALWAYS from byte 0 — i.e. a full (re-)index
+ * of the whole file. Exported so the watcher (watcher.ts) can call this exact
+ * same function for a brand-new file (`add` event) and for a full re-index
+ * after a detected compaction/rewrite, rather than duplicating this parsing
+ * logic. Per-line parse/insert logic itself lives in lineIndexer.ts, shared
+ * with the watcher's incremental tail path (tailIndexer.ts) too.
+ */
+export async function indexSessionFile(db: DB, filePath: string, sessionId: string): Promise<SessionIndexResult> {
+  const acc = createAccumulator(0);
+  const insertNode = prepareInsertNodeStmt(db);
 
   const readStream = fs.createReadStream(filePath, { encoding: "utf-8" });
   const rl = readline.createInterface({
@@ -70,51 +67,17 @@ async function indexSessionFile(db: DB, filePath: string, sessionId: string): Pr
   let lineNo = 0;
   for await (const rawLine of rl) {
     lineNo++;
-    if (rawLine.trim().length === 0) continue;
-
-    const parsed = parseLine(rawLine);
-
-    if (parsed.kind === "error") {
-      warnings.push(`${filePath}:${lineNo}: ${parsed.message}`);
-      continue;
-    }
-    if (parsed.kind === "title") {
-      aiTitle = parsed.aiTitle;
-      continue;
-    }
-    if (parsed.kind === "ignore") continue;
-
-    // parsed.kind === "chain"
-    if (createdAt === null) createdAt = parsed.timestamp || nowIso();
-    if (cwd === null && parsed.cwd) cwd = parsed.cwd;
-    if (titleFallback === null && parsed.type === "user" && parsed.contentText) {
-      titleFallback = parsed.contentText.slice(0, TITLE_FALLBACK_MAX_LEN);
-    }
-    // See sidechainLinker.ts: this is the undocumented join key for Task subagent sidechains.
-    if (parsed.toolUseResultAgentId) {
-      agentIdToNodeUuid.set(parsed.toolUseResultAgentId, parsed.uuid);
-    }
-
-    insertNode.run({
-      uuid: parsed.uuid,
-      sessionId,
-      parentUuid: parsed.parentUuid,
-      type: parsed.type,
-      role: parsed.role,
-      contentText: parsed.contentText,
-      contentRaw: parsed.raw,
-      timestamp: parsed.timestamp,
-      seq: seq++,
-    });
+    indexRawLine(insertNode, sessionId, rawLine, lineNo, filePath, acc);
   }
 
   return {
-    createdAt: createdAt ?? nowIso(),
-    aiTitle: aiTitle ?? titleFallback,
-    nodeCount: seq,
-    agentIdToNodeUuid,
-    cwd,
-    warnings,
+    createdAt: acc.createdAt ?? nowIso(),
+    aiTitle: acc.aiTitle ?? acc.titleFallback,
+    nodeCount: acc.seq,
+    addedNodeUuids: acc.addedNodeUuids,
+    agentIdToNodeUuid: acc.agentIdToNodeUuid,
+    cwd: acc.cwd,
+    warnings: acc.warnings,
     bytesRead: readStream.bytesRead,
   };
 }

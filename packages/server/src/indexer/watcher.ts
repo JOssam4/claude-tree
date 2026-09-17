@@ -1,0 +1,352 @@
+/**
+ * Live, incremental file watcher on top of the one-shot backfill indexer.
+ *
+ * STRICTLY READ-ONLY with respect to ~/.claude/projects/** — this module only
+ * ever calls fs.statSync/openSync("r")/fstatSync/readSync/closeSync (directly,
+ * or via backfill.ts's indexSessionFile / tailReader.ts) on files under
+ * CLAUDE_PROJECTS_DIR. All writes go to the `db` handle passed in.
+ *
+ * Responsibilities:
+ *  - `add`    -> full index from byte 0 (same function backfill.ts uses).
+ *  - `change` -> tail-index only the bytes after the session's stored
+ *                last_byte_offset (see tailIndexer.ts / tailReader.ts).
+ *  - shrink detection -> defensive full re-index (see handleChange below).
+ *  - debounced per-file dispatch, serialized per file path so overlapping
+ *    events for the same file can never race on last_byte_offset.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { watch as chokidarWatch, type FSWatcher } from "chokidar";
+import type { TreeUpdateEvent } from "@claude-tree/shared";
+import { CLAUDE_PROJECTS_DIR } from "../config.js";
+import type { DB } from "../db/client.js";
+import { indexSessionFile } from "./backfill.js";
+import { tailIndexFile } from "./tailIndexer.js";
+import { linkSidechain, parseAgentIdFromFilename } from "./sidechainLinker.js";
+
+/** Trailing debounce per file path for `change` events — Claude Code can write several lines within milliseconds during one turn. */
+const DEBOUNCE_MS = 75;
+
+export type WatcherLogFn = (message: string) => void;
+export type WatcherUpdateFn = (event: TreeUpdateEvent) => void;
+
+export interface TreeWatcherHandle {
+  /** Stops the underlying chokidar watcher and waits for any in-flight indexing to settle. */
+  close(): Promise<void>;
+}
+
+interface FileContext {
+  slug: string;
+  isSidechain: boolean;
+  /** `sessionId` for a normal session file, or `agent-<agentId>` for a subagent sidechain file. */
+  sessionId: string;
+  agentId: string | null;
+  /** Parent session's id, sidechain files only. */
+  parentSessionId: string | null;
+}
+
+/**
+ * Determines project slug / session id / sidechain-ness purely from a
+ * discovered file's path relative to CLAUDE_PROJECTS_DIR, mirroring the two
+ * shapes backfill.ts's directory walk recognizes:
+ *   <projectsDir>/<slug>/<sessionId>.jsonl
+ *   <projectsDir>/<slug>/<parentSessionId>/subagents/agent-<agentId>.jsonl
+ * Returns null for anything else (defensively ignored, not an error).
+ */
+function resolveFileContext(filePath: string): FileContext | null {
+  const rel = path.relative(CLAUDE_PROJECTS_DIR, filePath);
+  const parts = rel.split(path.sep);
+
+  if (parts.length === 2) {
+    const slug = parts[0] ?? "";
+    const fileName = parts[1] ?? "";
+    if (!slug || !fileName.endsWith(".jsonl")) return null;
+    return {
+      slug,
+      isSidechain: false,
+      sessionId: fileName.replace(/\.jsonl$/, ""),
+      agentId: null,
+      parentSessionId: null,
+    };
+  }
+
+  if (parts.length === 4 && parts[2] === "subagents") {
+    const slug = parts[0] ?? "";
+    const parentSessionId = parts[1] ?? "";
+    const fileName = parts[3] ?? "";
+    const agentId = parseAgentIdFromFilename(fileName);
+    if (!slug || !parentSessionId || !agentId) return null;
+    return {
+      slug,
+      isSidechain: true,
+      sessionId: `agent-${agentId}`,
+      agentId,
+      parentSessionId,
+    };
+  }
+
+  return null;
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function upsertProjectAndGetId(db: DB, slug: string, cwdHint: string | null): number {
+  const now = nowIso();
+  // Lossy fallback only (pure `/` <-> `-` replace) — same convention as backfill.ts's
+  // peekProjectCwd fallback; replaced with the real cwd once a chain line supplies one.
+  const cwd = cwdHint ?? slug.replace(/-/g, "/");
+  db.prepare(
+    `INSERT INTO projects (slug, cwd, first_seen_at, last_seen_at)
+     VALUES (@slug, @cwd, @now, @now)
+     ON CONFLICT(slug) DO UPDATE SET
+       last_seen_at = excluded.last_seen_at`,
+  ).run({ slug, cwd, now });
+  const row = db.prepare(`SELECT id FROM projects WHERE slug = ?`).get(slug) as { id: number };
+  return row.id;
+}
+
+function updateProjectCwd(db: DB, projectId: number, cwd: string | null): void {
+  if (!cwd) return;
+  db.prepare(`UPDATE projects SET cwd = ?, last_seen_at = ? WHERE id = ?`).run(cwd, nowIso(), projectId);
+}
+
+function getSessionRow(
+  db: DB,
+  sessionId: string,
+): { id: string; projectId: number; lastByteOffset: number } | undefined {
+  return db
+    .prepare(`SELECT id, project_id as projectId, last_byte_offset as lastByteOffset FROM sessions WHERE id = ?`)
+    .get(sessionId) as { id: string; projectId: number; lastByteOffset: number } | undefined;
+}
+
+/**
+ * Best-effort join of a just-(re)indexed subagent sidechain file back to its
+ * invocation point in the parent session's main chain. Same undocumented
+ * `toolUseResult.agentId` join key as sidechainLinker.ts / backfill.ts, but
+ * reconstructed here by scanning the parent session's already-indexed
+ * content_raw (backfill's in-memory {agentId -> node uuid} map only lives for
+ * the duration of a single backfill pass, so the watcher — which reacts to
+ * files arriving independently, possibly long after the parent was indexed —
+ * has no such map available and must recover it from the DB instead).
+ */
+function linkSidechainForFile(
+  db: DB,
+  parentSessionId: string,
+  agentId: string,
+  sidechainSessionId: string,
+  log: WatcherLogFn,
+): void {
+  const rows = db.prepare(`SELECT uuid, content_raw as contentRaw FROM nodes WHERE session_id = ?`).all(
+    parentSessionId,
+  ) as { uuid: string; contentRaw: string }[];
+
+  let sourceNodeUuid: string | null = null;
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.contentRaw) as { toolUseResult?: { agentId?: unknown } };
+      if (parsed.toolUseResult && parsed.toolUseResult.agentId === agentId) {
+        sourceNodeUuid = row.uuid;
+        break;
+      }
+    } catch {
+      // Malformed content_raw should be unreachable (it's a verbatim line we already parsed once), skip defensively.
+    }
+  }
+
+  const map = sourceNodeUuid ? new Map([[agentId, sourceNodeUuid]]) : new Map<string, string>();
+  const result = linkSidechain(db, agentId, sidechainSessionId, map);
+  if (!result.linked) {
+    log(
+      `[watcher] warning: orphaned sidechain agent-${agentId} (no toolUseResult.agentId match yet in parent session ${parentSessionId}; ` +
+        `this join is undocumented Claude Code internal behavior, may be a timing issue if the parent hasn't been indexed yet, or may have changed)`,
+    );
+  }
+}
+
+/** Full index from byte 0 — used for a brand-new file (`add`) and for a detected compaction/rewrite (full re-index fallback). */
+async function handleAdd(db: DB, filePath: string, onUpdate: WatcherUpdateFn, log: WatcherLogFn): Promise<void> {
+  const ctx = resolveFileContext(filePath);
+  if (!ctx) return; // Path shape we don't recognize (e.g. a sibling .meta.json) — ignore defensively, not an error.
+
+  const now = nowIso();
+  const projectId = upsertProjectAndGetId(db, ctx.slug, null);
+
+  db.prepare(
+    `INSERT INTO sessions (id, project_id, file_path, is_sidechain, agent_id, ai_title, created_at, last_indexed_at, last_byte_offset, is_synthetic)
+     VALUES (@id, @projectId, @filePath, @isSidechain, @agentId, NULL, @now, @now, 0, 0)
+     ON CONFLICT(id) DO UPDATE SET file_path = excluded.file_path`,
+  ).run({
+    id: ctx.sessionId,
+    projectId,
+    filePath,
+    isSidechain: ctx.isSidechain ? 1 : 0,
+    agentId: ctx.agentId,
+    now,
+  });
+
+  let result;
+  try {
+    result = await indexSessionFile(db, filePath, ctx.sessionId);
+  } catch (err) {
+    log(`[watcher] error: failed to index ${filePath}: ${(err as Error).message}`);
+    return;
+  }
+
+  db.prepare(
+    `UPDATE sessions SET ai_title = @aiTitle, created_at = @createdAt, last_indexed_at = @now, last_byte_offset = @bytesRead
+     WHERE id = @id`,
+  ).run({ id: ctx.sessionId, aiTitle: result.aiTitle, createdAt: result.createdAt, now, bytesRead: result.bytesRead });
+
+  updateProjectCwd(db, projectId, result.cwd);
+
+  if (ctx.isSidechain && ctx.parentSessionId && ctx.agentId) {
+    linkSidechainForFile(db, ctx.parentSessionId, ctx.agentId, ctx.sessionId, log);
+  }
+
+  for (const w of result.warnings) log(`[watcher] ${w}`);
+
+  if (result.addedNodeUuids.length > 0) {
+    log(`[watcher] indexed new file ${filePath}: +${result.addedNodeUuids.length} nodes`);
+    onUpdate({ projectSlug: ctx.slug, sessionId: ctx.sessionId, addedNodeUuids: result.addedNodeUuids });
+  }
+}
+
+/** Incremental tail from the session's stored last_byte_offset, with shrink (compaction/rewrite) detection. */
+async function handleChange(db: DB, filePath: string, onUpdate: WatcherUpdateFn, log: WatcherLogFn): Promise<void> {
+  const ctx = resolveFileContext(filePath);
+  if (!ctx) return;
+
+  const session = getSessionRow(db, ctx.sessionId);
+  if (!session) {
+    // We've never indexed this file (e.g. an 'add' event was somehow missed) — treat as brand new.
+    await handleAdd(db, filePath, onUpdate, log);
+    return;
+  }
+
+  let currentSize: number;
+  try {
+    currentSize = fs.statSync(filePath).size;
+  } catch {
+    return; // File vanished between the event firing and this stat — nothing to do.
+  }
+
+  if (currentSize < session.lastByteOffset) {
+    // UNVERIFIED heuristic — see plan doc "Known risks to keep in mind during
+    // implementation": whether Claude Code ever rewrites/truncates a session
+    // file in place (e.g. as part of compaction) rather than only ever
+    // appending is unconfirmed on this machine. If the file is ever smaller
+    // than our recorded offset, the only safe assumption is that it was
+    // rewritten out from under us, so incremental tailing can no longer be
+    // trusted for it. A dedicated Milestone 6 spike should confirm or correct
+    // this assumption; until then, fall back to a full re-index.
+    log(
+      `[watcher] WARNING: ${filePath} shrank (size=${currentSize} < last_byte_offset=${session.lastByteOffset}); ` +
+        `treating as rewritten/compacted and re-indexing fully from byte 0`,
+    );
+    db.prepare(`DELETE FROM nodes WHERE session_id = ?`).run(ctx.sessionId);
+    db.prepare(`UPDATE sessions SET last_byte_offset = 0 WHERE id = ?`).run(ctx.sessionId);
+    await handleAdd(db, filePath, onUpdate, log);
+    return;
+  }
+
+  const result = tailIndexFile(db, filePath, ctx.sessionId, session.lastByteOffset);
+  for (const w of result.warnings) log(`[watcher] ${w}`);
+
+  if (result.newByteOffset === session.lastByteOffset) return; // No new complete line yet — nothing to persist.
+
+  const now = nowIso();
+  db.prepare(
+    `UPDATE sessions SET last_byte_offset = ?, last_indexed_at = ?, ai_title = COALESCE(?, ai_title) WHERE id = ?`,
+  ).run(result.newByteOffset, now, result.aiTitle, ctx.sessionId);
+
+  updateProjectCwd(db, session.projectId, result.cwd);
+
+  if (ctx.isSidechain && ctx.parentSessionId && ctx.agentId) {
+    linkSidechainForFile(db, ctx.parentSessionId, ctx.agentId, ctx.sessionId, log);
+  }
+
+  if (result.addedNodeUuids.length > 0) {
+    log(
+      `[watcher] tailed ${filePath}: +${result.addedNodeUuids.length} nodes ` +
+        `(offset ${session.lastByteOffset} -> ${result.newByteOffset})`,
+    );
+    onUpdate({ projectSlug: ctx.slug, sessionId: ctx.sessionId, addedNodeUuids: result.addedNodeUuids });
+  }
+}
+
+/**
+ * Starts watching ~/.claude/projects/**\/*.jsonl (via CLAUDE_PROJECTS_DIR,
+ * never hardcoded) for new files and appended lines, indexing incrementally
+ * into `db`. Call `runBackfill` first — this only reacts to filesystem events
+ * from the moment it starts (`ignoreInitial: true`), it does not itself do an
+ * initial full scan.
+ *
+ * `onUpdate` fires once per file per indexing pass that actually committed
+ * new nodes, shaped to match the plan's WS `tree:update` message
+ * (@claude-tree/shared's `TreeUpdateEvent`) so Milestone 3's WebSocket server
+ * can wire this straight through without this module changing.
+ */
+export function startWatcher(db: DB, onUpdate: WatcherUpdateFn, log: WatcherLogFn = console.log): TreeWatcherHandle {
+  // Per-file promise chain so overlapping events (e.g. a debounced 'change'
+  // firing while a slow 'add' full-index is still running) for the SAME file
+  // are always handled one at a time, never concurrently racing on that
+  // file's last_byte_offset.
+  const fileQueues = new Map<string, Promise<void>>();
+  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function runSerialized(filePath: string, fn: () => Promise<void>): void {
+    const prev = fileQueues.get(filePath) ?? Promise.resolve();
+    const next = prev.then(fn).catch((err: unknown) => {
+      log(`[watcher] error handling ${filePath}: ${(err as Error).message}`);
+    });
+    fileQueues.set(filePath, next);
+  }
+
+  // NOTE: chokidar is given the directory itself, not a `**/*.jsonl` glob
+  // string. Verified on this machine (WSL2 + chokidar v5) that glob-pattern
+  // watching silently fires no add/change events at all here — even a
+  // single-level `*.jsonl` glob never emitted anything, while a plain
+  // directory watch (recursive by default, including newly-created nested
+  // subdirectories such as a session's subagents/ folder appearing after
+  // watch start) worked correctly. Filtering to `.jsonl` in the handlers
+  // below sidesteps that glob issue entirely and is more robust regardless
+  // of its cause.
+  const watcher: FSWatcher = chokidarWatch(CLAUDE_PROJECTS_DIR, {
+    // Pre-existing files are the backfill's job; the watcher only reacts to
+    // filesystem events from the moment it starts.
+    ignoreInitial: true,
+  });
+
+  watcher.on("add", (filePath: string) => {
+    if (!filePath.endsWith(".jsonl")) return;
+    runSerialized(filePath, () => handleAdd(db, filePath, onUpdate, log));
+  });
+
+  watcher.on("change", (filePath: string) => {
+    if (!filePath.endsWith(".jsonl")) return;
+    const existing = pendingTimers.get(filePath);
+    if (existing) clearTimeout(existing);
+    pendingTimers.set(
+      filePath,
+      setTimeout(() => {
+        pendingTimers.delete(filePath);
+        runSerialized(filePath, () => handleChange(db, filePath, onUpdate, log));
+      }, DEBOUNCE_MS),
+    );
+  });
+
+  watcher.on("error", (err: unknown) => {
+    log(`[watcher] chokidar error: ${(err as Error).message}`);
+  });
+
+  return {
+    async close() {
+      for (const timer of pendingTimers.values()) clearTimeout(timer);
+      pendingTimers.clear();
+      await Promise.allSettled(fileQueues.values());
+      await watcher.close();
+    },
+  };
+}
