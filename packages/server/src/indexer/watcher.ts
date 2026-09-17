@@ -332,6 +332,23 @@ export function startWatcher(db: DB, onUpdate: WatcherUpdateFn, log: WatcherLogF
     // Pre-existing files are the backfill's job; the watcher only reacts to
     // filesystem events from the moment it starts.
     ignoreInitial: true,
+    // usePolling: chokidar's default native-fs-event watch (inotify, via
+    // fsevents/node's fs.watch) was reproduced (isolated down to a minimal
+    // chokidar.watch(CLAUDE_PROJECTS_DIR) + bare `ws` server repro, no
+    // Fastify/DB/app code involved) to destroy ANY concurrently-open
+    // WebSocket connection in this process within ~a few hundred ms, 100%
+    // reproducibly, whenever it was actively watching this user's real
+    // ~/.claude/projects on WSL2 (9p/drvfs-backed). Root cause is believed to
+    // be an fd/event-loop interaction between native recursive fs watching
+    // and concurrently-open sockets under WSL2's filesystem backend — the
+    // exact mechanism doesn't matter as much as the fix. Polling sidesteps
+    // native fs-event watching entirely and is the standard, documented
+    // remedy for this class of chokidar-on-WSL2/network-fs issue. DO NOT
+    // remove/"simplify" this back to the default without re-verifying the WS
+    // stability repro (see packages/server's Milestone 3 WS-fix task) first.
+    usePolling: true,
+    interval: 750, // text file polling interval; this dir has few files, no need to poll faster.
+    binaryInterval: 750,
   });
 
   watcher.on("add", (filePath: string) => {
