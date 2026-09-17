@@ -13,13 +13,19 @@ export function App() {
 
   const refetchProjects = useCallback(() => {
     getProjects()
-      .then(setProjects)
+      .then((data) => {
+        setProjects(data);
+        setError(null);
+      })
       .catch((e: Error) => setError(e.message));
   }, []);
 
   const refetchTree = useCallback((slug: string) => {
     getProjectTree(slug)
-      .then(setTree)
+      .then((data) => {
+        setTree(data);
+        setError(null);
+      })
       .catch((e: Error) => setError(e.message));
   }, []);
 
