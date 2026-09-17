@@ -1,0 +1,19 @@
+{
+  "name": "claude-tree",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Claude Code Conversation Tree Manager",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace packages/shared && npm run build --workspace packages/server",
+    "backfill": "npm run backfill --workspace packages/server"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "volta": {
+    "node": "22.23.2"
+  }
+}

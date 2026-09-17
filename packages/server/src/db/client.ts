@@ -1,0 +1,27 @@
+import fs from "node:fs";
+import Database from "better-sqlite3";
+import { DB_DIR, DB_PATH, SCHEMA_SQL_PATH } from "../config.js";
+
+export type DB = Database.Database;
+
+/**
+ * Opens (creating if needed) this app's own SQLite database and ensures the
+ * schema exists. This is the ONLY database this app writes to — it is
+ * separate from, and has no bearing on, anything under ~/.claude.
+ *
+ * Migration strategy for now: just (re-)run schema.sql, whose statements are
+ * all `CREATE TABLE/INDEX IF NOT EXISTS`. That's sufficient until the schema
+ * needs to evolve after data already exists; a real migration framework can
+ * replace this later without changing the call site.
+ */
+export function openDb(dbPath: string = DB_PATH): DB {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+  const db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+
+  const schema = fs.readFileSync(SCHEMA_SQL_PATH, "utf-8");
+  db.exec(schema);
+
+  return db;
+}
