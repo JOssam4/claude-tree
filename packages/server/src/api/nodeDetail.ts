@@ -39,6 +39,25 @@ function getForkSourceNodeUuid(db: DB, sessionId: string): string | null {
 }
 
 /**
+ * The node with the largest `seq` strictly less than `seq` within the same
+ * session, if any — i.e. "whatever line came immediately before this one in
+ * file append order." Milestone 6 finding (see watcher.ts's compaction
+ * comment): Claude Code's compaction appends a fresh `parentUuid: null` chain
+ * root partway through an existing session file rather than chaining onto
+ * the pre-compaction tail. A `parent_uuid IS NULL` node is therefore NOT
+ * reliably "this session's root" — it's only the root if nothing in the
+ * session precedes it by seq. This lets the ancestry walk below tell the two
+ * cases apart and keep walking through a compaction boundary instead of
+ * stopping there.
+ */
+function getPriorSeqNodeUuid(db: DB, sessionId: string, seq: number): string | null {
+  const row = db
+    .prepare(`SELECT uuid FROM nodes WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT 1`)
+    .get(sessionId, seq) as { uuid: string } | undefined;
+  return row?.uuid ?? null;
+}
+
+/**
  * Walks parent_uuid from `uuid` up to its session's root, then — if that
  * session is itself a branch_edges target — continues into the PARENT
  * session via the fork's source node, and repeats. So ancestry can cross
@@ -81,8 +100,21 @@ export function getNodeDetail(db: DB, uuid: string, log: LogFn = console.warn): 
       continue;
     }
 
-    // Session root reached. Ancestry stops here UNLESS this session was
-    // itself created by a branch/subagent fork, in which case we hop into
+    // parent_uuid is null. This is normally "session root reached," but see
+    // getPriorSeqNodeUuid's doc comment: post-compaction, Claude Code appends
+    // a SECOND parent_uuid:null chain root partway through the same session
+    // file. Tell the two apart by seq: if an earlier-seq node exists in this
+    // same session, this is a compaction boundary, not the true root — keep
+    // walking by hopping to whatever line immediately preceded it in file
+    // order, so ancestry doesn't silently truncate at the compaction point.
+    const priorInSameSession = getPriorSeqNodeUuid(db, node.sessionId, node.seq);
+    if (priorInSameSession) {
+      currentUuid = priorInSameSession;
+      continue;
+    }
+
+    // Genuine session root reached. Ancestry stops here UNLESS this session
+    // was itself created by a branch/subagent fork, in which case we hop into
     // the parent session at the fork's source node and keep walking.
     if (visitedSessionRoots.has(node.sessionId)) {
       log(`[nodeDetail] cycle detected across session boundaries at session ${node.sessionId} — stopping ancestry walk`);
