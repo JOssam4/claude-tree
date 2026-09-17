@@ -68,12 +68,60 @@ export interface BranchEdgeDTO {
   createdAt: string;
 }
 
-/** Forest of sessions + nodes + branch_edges for a single project, as returned by GET /api/projects/:slug/tree. */
+/** Per-project summary row, as returned by GET /api/projects. */
+export interface ProjectSummaryDTO extends ProjectDTO {
+  /** Count of all sessions (including subagent sidechains) belonging to this project. */
+  sessionCount: number;
+  /** Count of root sessions — sessions with no branch_edges row targeting them, i.e. forest roots for GET /api/projects/:slug/tree. */
+  rootSessionCount: number;
+}
+
+/**
+ * A single session forked off of some node in its parent session, nested one
+ * level down in the forest. `sourceNodeUuid` is the node (in the PARENT
+ * session) the fork originated from — redundant with the parent's own node
+ * list but included here so a consumer never has to search for it.
+ */
+export interface SessionForkDTO {
+  edgeType: BranchEdgeType;
+  sourceNodeUuid: string;
+  session: SessionTreeNodeDTO;
+}
+
+/** One session's full node chain plus any sessions (branch or subagent) forked from a node within it, recursively. */
+export interface SessionTreeNodeDTO {
+  session: SessionDTO;
+  nodes: NodeDTO[];
+  forks: SessionForkDTO[];
+}
+
+/**
+ * Forest of sessions for a single project, as returned by GET
+ * /api/projects/:slug/tree. One entry in `roots` per session that is not
+ * itself a branch_edges target (i.e. a genuine new conversation, not a fork
+ * of another node) — every other session in the project hangs off some
+ * root's `forks` tree, including subagent sidechains (edgeType='subagent').
+ */
 export interface ProjectTreeDTO {
   project: ProjectDTO;
-  sessions: SessionDTO[];
-  nodes: NodeDTO[];
-  branchEdges: BranchEdgeDTO[];
+  roots: SessionTreeNodeDTO[];
+}
+
+/**
+ * A single node's ancestry, oldest -> newest, ending with the node itself.
+ * Ancestry walks parent_uuid up to the session root, and if that session is
+ * itself a branch_edges target, continues into the parent session through
+ * the fork's source node — so the path CAN cross session boundaries. See
+ * the server's ancestry-walk implementation for the cycle/depth guard.
+ */
+export interface NodeAncestryDTO {
+  path: NodeDTO[];
+}
+
+/** Single node detail, as returned by GET /api/nodes/:uuid. */
+export interface NodeDetailDTO {
+  node: NodeDTO;
+  ancestry: NodeAncestryDTO;
 }
 
 /** Summary counts produced by a backfill run, used for verification/reporting. */
@@ -100,3 +148,11 @@ export interface TreeUpdateEvent {
   sessionId: string;
   addedNodeUuids: string[];
 }
+
+/** The actual message shape sent over `WS /ws` (Milestone 3), wrapping TreeUpdateEvent with its `type` tag. */
+export interface TreeUpdateWsMessage extends TreeUpdateEvent {
+  type: "tree:update";
+}
+
+/** Union of all server->client WS message types. Just one for now; grows as more are added (e.g. terminal:data in Milestone 5). */
+export type WsServerMessage = TreeUpdateWsMessage;

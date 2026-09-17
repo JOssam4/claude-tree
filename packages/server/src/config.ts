@@ -24,3 +24,6 @@ export const DB_DIR = path.join(SERVER_ROOT, "data");
 export const DB_PATH = path.join(DB_DIR, "tree.db");
 
 export const SCHEMA_SQL_PATH = path.join(__dirname, "db", "schema.sql");
+
+/** HTTP/WS server port. Local-only tool — no auth, override via env if 4317 collides with something else. */
+export const HTTP_PORT = Number(process.env.CLAUDE_TREE_PORT ?? 4317);
