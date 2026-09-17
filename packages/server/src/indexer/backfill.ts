@@ -30,6 +30,18 @@ interface SessionIndexResult {
   agentIdToNodeUuid: Map<string, string>;
   cwd: string | null;
   warnings: string[];
+  /**
+   * Bytes actually consumed from the file by this indexing pass, taken from
+   * the underlying read stream's own counter rather than a post-hoc
+   * fs.statSync(filePath).size. This matters because the file can be a live
+   * Claude Code session that keeps growing (e.g. this very indexer running
+   * inside a session that's actively being appended to) — stat'ing after the
+   * fact would race and could report an offset larger than what was actually
+   * parsed and inserted, causing a future incremental tailer to silently skip
+   * unindexed trailing lines. Stream bytesRead reflects exactly how far this
+   * pass actually read, immune to growth that happens after EOF.
+   */
+  bytesRead: number;
 }
 
 /** Streams one session (or subagent sidechain) .jsonl file into the `nodes` table in a single forward pass. */
@@ -49,8 +61,9 @@ async function indexSessionFile(db: DB, filePath: string, sessionId: string): Pr
      VALUES (@uuid, @sessionId, @parentUuid, @type, @role, @contentText, @contentRaw, @timestamp, @seq)`,
   );
 
+  const readStream = fs.createReadStream(filePath, { encoding: "utf-8" });
   const rl = readline.createInterface({
-    input: fs.createReadStream(filePath, { encoding: "utf-8" }),
+    input: readStream,
     crlfDelay: Infinity,
   });
 
@@ -102,6 +115,7 @@ async function indexSessionFile(db: DB, filePath: string, sessionId: string): Pr
     agentIdToNodeUuid,
     cwd,
     warnings,
+    bytesRead: readStream.bytesRead,
   };
 }
 
@@ -243,20 +257,27 @@ export async function runBackfill(db: DB, options: BackfillOptions = {}): Promis
         lastByteOffset: 0,
       });
 
-      const result = await indexSessionFile(db, filePath, sessionId);
+      let result: SessionIndexResult;
+      try {
+        result = await indexSessionFile(db, filePath, sessionId);
+      } catch (err) {
+        // A single file-level failure (e.g. a transient read error, or the
+        // file vanishing mid-read) must not abort the rest of the backfill.
+        // The session row is left with its placeholder stats (last_byte_offset
+        // 0), which honestly reflects "not confirmed fully indexed"; any nodes
+        // that *did* get inserted before the throw are still safe (uuid is the
+        // primary key with INSERT OR IGNORE), and a subsequent backfill run
+        // will simply re-read the whole file from the start and fill in the
+        // rest idempotently.
+        warnings.push(`${filePath}: failed to index: ${(err as Error).message}`);
+        continue;
+      }
       nodesInserted += result.nodeCount;
       warnings.push(...result.warnings);
       perSessionAgentMap.set(sessionId, result.agentIdToNodeUuid);
 
       if (!projectFirstSeen || result.createdAt < projectFirstSeen) projectFirstSeen = result.createdAt;
       if (!projectLastSeen || result.createdAt > projectLastSeen) projectLastSeen = result.createdAt;
-
-      let fileSize = 0;
-      try {
-        fileSize = fs.statSync(filePath).size;
-      } catch {
-        /* file vanished between listing and stat; leave offset at 0 */
-      }
 
       upsertSession.run({
         id: sessionId,
@@ -267,7 +288,7 @@ export async function runBackfill(db: DB, options: BackfillOptions = {}): Promis
         aiTitle: result.aiTitle,
         createdAt: result.createdAt,
         lastIndexedAt: nowIso(),
-        lastByteOffset: fileSize,
+        lastByteOffset: result.bytesRead,
       });
     }
 
@@ -310,19 +331,18 @@ export async function runBackfill(db: DB, options: BackfillOptions = {}): Promis
           lastByteOffset: 0,
         });
 
-        const result = await indexSessionFile(db, filePath, sidechainSessionId);
+        let result: SessionIndexResult;
+        try {
+          result = await indexSessionFile(db, filePath, sidechainSessionId);
+        } catch (err) {
+          warnings.push(`${filePath}: failed to index: ${(err as Error).message}`);
+          continue;
+        }
         nodesInserted += result.nodeCount;
         warnings.push(...result.warnings);
 
         if (!projectFirstSeen || result.createdAt < projectFirstSeen) projectFirstSeen = result.createdAt;
         if (!projectLastSeen || result.createdAt > projectLastSeen) projectLastSeen = result.createdAt;
-
-        let fileSize = 0;
-        try {
-          fileSize = fs.statSync(filePath).size;
-        } catch {
-          /* ignore */
-        }
 
         upsertSession.run({
           id: sidechainSessionId,
@@ -333,7 +353,7 @@ export async function runBackfill(db: DB, options: BackfillOptions = {}): Promis
           aiTitle: result.aiTitle,
           createdAt: result.createdAt,
           lastIndexedAt: nowIso(),
-          lastByteOffset: fileSize,
+          lastByteOffset: result.bytesRead,
         });
 
         const linkResult = linkSidechain(db, agentId, sidechainSessionId, agentIdToNodeUuid);
