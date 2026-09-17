@@ -150,6 +150,22 @@ body {
   background: #dde3ff;
 }
 
+.turn-node--placeholder {
+  border-style: dashed;
+  border-color: #bbb;
+  background: #f6f6f8;
+  color: #888;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  text-align: center;
+  box-shadow: none;
+}
+.turn-node__placeholder-text {
+  font-style: italic;
+}
+
 /* Fork edges: branch (user-initiated) vs subagent (spawned Task) get visually distinct treatment. */
 .edge-branch path {
   stroke: #e8975b;

@@ -3,9 +3,13 @@ import { ReactFlow, Background, Controls, MiniMap, type NodeTypes } from "@xyflo
 import "@xyflow/react/dist/style.css";
 import type { ProjectTreeDTO } from "@claude-tree/shared";
 import { buildForestGraph } from "../tree/turnGraph";
+import { PlaceholderNode } from "./PlaceholderNode";
 import { TurnNode } from "./TurnNode";
 
-const nodeTypes: NodeTypes = { turn: TurnNode as NodeTypes[string] };
+const nodeTypes: NodeTypes = {
+  turn: TurnNode as NodeTypes[string],
+  placeholder: PlaceholderNode as NodeTypes[string],
+};
 
 interface TreeCanvasProps {
   tree: ProjectTreeDTO;

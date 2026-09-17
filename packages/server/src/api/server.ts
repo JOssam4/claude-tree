@@ -123,7 +123,16 @@ export async function createApiServer(db: DB): Promise<ApiServer> {
         } catch {
           return; // Malformed frame — ignore rather than crash the connection.
         }
-        ptyManager.handleClientMessage(socket, parsed);
+        try {
+          ptyManager.handleClientMessage(socket, parsed);
+        } catch (err) {
+          // Belt-and-braces: ptyManager's own spawn path already catches and
+          // surfaces failures as a terminal:data message, but a WS message
+          // handler throwing uncaught would otherwise crash this whole
+          // long-lived server process for every open terminal — never worth
+          // that blast radius for a local dev tool's one connection.
+          app.log.error(err);
+        }
       });
       socket.on("close", () => {
         clients.delete(socket);

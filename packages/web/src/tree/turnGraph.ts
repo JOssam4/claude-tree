@@ -31,6 +31,29 @@ export interface TurnNodeData extends Record<string, unknown> {
 
 export type TurnNode = Node<TurnNodeData, "turn">;
 
+/**
+ * Milestone 6: a freshly-forked session has zero of its own indexed `nodes`
+ * (its shared-prefix lines' uuids already belong to the original session, so
+ * `INSERT OR IGNORE` skips them) until the user's first genuinely new message
+ * gets appended and indexed. Without special-casing this, the fork would
+ * render nothing at all — no box, no edge — since there's no real turn to
+ * anchor either to. This placeholder is keyed directly off the `branch_edges`
+ * row itself (via `fork.session.session`, which always exists immediately
+ * after a successful branch call), not off indexed node data, so it appears
+ * the instant the branch API call succeeds. It disappears on its own: once
+ * the session gets indexed, the next `tree:update` broadcast triggers
+ * App.tsx's refetch, `fork.session.nodes` is non-empty, and
+ * `buildSessionSubtree` renders a real `TurnNode` in its place instead.
+ */
+export interface PlaceholderNodeData extends Record<string, unknown> {
+  sessionId: string;
+  edgeType: "branch" | "subagent";
+}
+export type PlaceholderNode = Node<PlaceholderNodeData, "placeholder">;
+
+/** Everything `buildForestGraph` can hand xyflow — a real turn box or a not-yet-indexed fork's placeholder. */
+export type TreeFlowNode = TurnNode | PlaceholderNode;
+
 export type ForkEdgeData = Record<string, never>;
 export type TurnEdge = Edge<ForkEdgeData>;
 
@@ -81,7 +104,7 @@ function groupTurns(sessionId: string, nodes: NodeDTO[]): Turn[] {
 }
 
 interface BuildResult {
-  nodes: TurnNode[];
+  nodes: TreeFlowNode[];
   edges: TurnEdge[];
 }
 
@@ -93,7 +116,7 @@ function buildSessionSubtree(
 ): BuildResult {
   const { session, nodes: rawNodes, forks } = tree;
   const turns = groupTurns(session.id, rawNodes);
-  const nodes: TurnNode[] = [];
+  const nodes: TreeFlowNode[] = [];
   const edges: TurnEdge[] = [];
 
   // uuid -> turn id, so fork source nodes (which reference a specific underlying node) resolve to their box.
@@ -135,11 +158,38 @@ function buildSessionSubtree(
 
   for (const fork of forks) {
     const sourceTurnId = uuidToTurnId.get(fork.sourceNodeUuid);
+    if (!sourceTurnId) continue; // shouldn't happen: fork.sourceNodeUuid always belongs to this very session's own turns
+
+    if (fork.session.nodes.length === 0) {
+      // See PlaceholderNodeData doc comment: this fork's target session exists
+      // (the branch call succeeded and its branch_edges/sessions rows are
+      // real) but has no indexed content yet. A zero-node session can't
+      // itself have any forks yet either (you can only branch from an
+      // existing indexed node), so there's nothing to recurse into.
+      const placeholderId = `placeholder-${fork.session.session.id}`;
+      nodes.push({
+        id: placeholderId,
+        type: "placeholder",
+        position: { x: 0, y: 0 }, // overwritten by dagre in layoutForest
+        data: { sessionId: fork.session.session.id, edgeType: fork.edgeType },
+      });
+      edges.push({
+        id: `fork-${fork.sourceNodeUuid}-${placeholderId}`,
+        source: sourceTurnId,
+        target: placeholderId,
+        type: "smoothstep",
+        className: fork.edgeType === "subagent" ? "edge-subagent" : "edge-branch",
+        label: fork.edgeType,
+        data: {},
+      });
+      continue;
+    }
+
     const child = buildSessionSubtree(fork.session, true, onBranch);
     nodes.push(...child.nodes);
     edges.push(...child.edges);
     const childRootId = child.nodes[0]?.id;
-    if (sourceTurnId && childRootId) {
+    if (childRootId) {
       edges.push({
         id: `fork-${fork.sourceNodeUuid}-${childRootId}`,
         source: sourceTurnId,
@@ -156,7 +206,7 @@ function buildSessionSubtree(
 }
 
 /** Runs dagre top-to-bottom layout over one connected component, returning nodes with computed positions. */
-function layoutComponent(nodes: TurnNode[], edges: TurnEdge[]): TurnNode[] {
+function layoutComponent(nodes: TreeFlowNode[], edges: TurnEdge[]): TreeFlowNode[] {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "TB", nodesep: NODE_SEP, ranksep: RANK_SEP });
   g.setDefaultEdgeLabel(() => ({}));
@@ -175,7 +225,7 @@ function layoutComponent(nodes: TurnNode[], edges: TurnEdge[]): TurnNode[] {
  * disconnected trees never overlap. No synthetic super-root is added.
  */
 export function buildForestGraph(tree: ProjectTreeDTO, onBranch: (targetNodeUuid: string) => void): BuildResult {
-  const allNodes: TurnNode[] = [];
+  const allNodes: TreeFlowNode[] = [];
   const allEdges: TurnEdge[] = [];
   let xOffset = 0;
 

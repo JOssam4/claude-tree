@@ -248,14 +248,33 @@ async function handleChange(db: DB, filePath: string, onUpdate: WatcherUpdateFn,
   }
 
   if (currentSize < session.lastByteOffset) {
-    // UNVERIFIED heuristic — see plan doc "Known risks to keep in mind during
-    // implementation": whether Claude Code ever rewrites/truncates a session
-    // file in place (e.g. as part of compaction) rather than only ever
-    // appending is unconfirmed on this machine. If the file is ever smaller
-    // than our recorded offset, the only safe assumption is that it was
-    // rewritten out from under us, so incremental tailing can no longer be
-    // trusted for it. A dedicated Milestone 6 spike should confirm or correct
-    // this assumption; until then, fall back to a full re-index.
+    // VERIFIED (Milestone 6 spike, 2026-09-16, Claude Code CLI v2.1.274):
+    // deliberately triggered a real `/compact` in a scratch session on this
+    // machine (throwaway cwd, node-pty-scripted interactive session) and
+    // diffed the .jsonl before/after byte-for-byte. Compaction is strictly
+    // APPEND-ONLY — every pre-compaction line stays exactly where it was,
+    // untouched; Claude Code appends a new `system` line followed by a
+    // `user` line holding the compacted summary text ("This session is
+    // being continued from a previous conversation that ran out of
+    // context..."), then continues the conversation normally. The file only
+    // ever grew (56 lines / ~266KB in the observed run) across the compact
+    // event — it was never truncated or rewritten in place.
+    //
+    // One related wrinkle worth recording even though it's out of scope for
+    // this shrink check: the appended post-compaction `system` line has
+    // `parentUuid: null`, i.e. compaction starts a *second* chain root
+    // within the same session file rather than chaining onto the
+    // pre-compaction tail. That affects ancestry-walking (a node whose
+    // ancestry crosses a compaction boundary will stop at the new root) but
+    // not this indexer, which groups/orders purely by append position
+    // (`seq`), not by walking parentUuid.
+    //
+    // So: on this Claude Code version, `currentSize < last_byte_offset`
+    // genuinely never fires as a result of compaction. If it fires anyway,
+    // it means something else rewrote/truncated the file out from under us
+    // (a future Claude Code version changing this behavior, manual editing,
+    // filesystem weirdness, etc.) — treating that as "rewritten, re-index
+    // fully" remains the correct, safe fallback either way.
     log(
       `[watcher] WARNING: ${filePath} shrank (size=${currentSize} < last_byte_offset=${session.lastByteOffset}); ` +
         `treating as rewritten/compacted and re-indexing fully from byte 0`,

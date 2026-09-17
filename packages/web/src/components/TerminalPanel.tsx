@@ -29,11 +29,20 @@ export function TerminalPanel({ sessionId, onClose }: TerminalPanelProps) {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${proto}//${window.location.host}/ws`);
 
+    // Milestone 6: track whether this socket ever reached OPEN and whether
+    // *we* (the cleanup below) initiated the close, so the 'close' handler
+    // can tell a normal panel-close apart from the connection dying/never
+    // coming up in the first place — the two cases a user could otherwise
+    // read as "the terminal is just frozen" with no explanation.
+    let didOpen = false;
+    let intentionalClose = false;
+
     function send(message: WsClientMessage): void {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
     }
 
     socket.addEventListener("open", () => {
+      didOpen = true;
       send({ type: "terminal:open", sessionId, cols: term.cols, rows: term.rows });
     });
     socket.addEventListener("message", (ev) => {
@@ -43,6 +52,16 @@ export function TerminalPanel({ sessionId, onClose }: TerminalPanelProps) {
       } catch {
         // Ignore malformed frames rather than crashing the panel.
       }
+    });
+    socket.addEventListener("error", () => {
+      term.write("\r\n\x1b[31m[error] could not connect to the claude-tree server (is it running?)\x1b[0m\r\n");
+    });
+    socket.addEventListener("close", () => {
+      if (intentionalClose) return;
+      const reason = didOpen
+        ? "\r\n\x1b[31m[error] connection to the claude-tree server was lost\x1b[0m\r\n"
+        : "\r\n\x1b[31m[error] could not connect to the claude-tree server (is it running?)\x1b[0m\r\n";
+      term.write(reason);
     });
 
     const dataSub = term.onData((data) => send({ type: "terminal:input", sessionId, data }));
@@ -56,6 +75,7 @@ export function TerminalPanel({ sessionId, onClose }: TerminalPanelProps) {
     return () => {
       resizeObserver.disconnect();
       dataSub.dispose();
+      intentionalClose = true;
       send({ type: "terminal:close", sessionId });
       socket.close();
       term.dispose();

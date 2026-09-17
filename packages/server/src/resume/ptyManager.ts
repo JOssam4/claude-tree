@@ -61,19 +61,37 @@ export function createPtyManager(db: DB, log: PtyLogFn = console.log): PtyManage
       }
     }
 
-    const ptyProcess = pty.spawn("claude", ["--resume", sessionId], {
-      name: "xterm-color",
-      cols: cols > 0 ? cols : 80,
-      rows: rows > 0 ? rows : 24,
-      // CRITICAL: must be the ORIGINAL project's cwd, not this server process's
-      // own cwd or anything else. Verified in the Milestone-0 spike: `claude
-      // --resume` launched from the wrong cwd doesn't error — it silently
-      // starts a blank session, which would look like a truncation bug but
-      // actually be a cwd bug. Looked up fresh per-open (not cached) so it
-      // stays correct even if the project's cwd is ever corrected later.
-      cwd,
-      env: process.env as Record<string, string>,
-    });
+    let ptyProcess: pty.IPty;
+    try {
+      ptyProcess = pty.spawn("claude", ["--resume", sessionId], {
+        name: "xterm-color",
+        cols: cols > 0 ? cols : 80,
+        rows: rows > 0 ? rows : 24,
+        // CRITICAL: must be the ORIGINAL project's cwd, not this server process's
+        // own cwd or anything else. Verified in the Milestone-0 spike: `claude
+        // --resume` launched from the wrong cwd doesn't error — it silently
+        // starts a blank session, which would look like a truncation bug but
+        // actually be a cwd bug. Looked up fresh per-open (not cached) so it
+        // stays correct even if the project's cwd is ever corrected later.
+        cwd,
+        env: process.env as Record<string, string>,
+      });
+    } catch (err) {
+      // Milestone 6: node-pty can throw synchronously here (observed for a
+      // missing `claude` binary — ENOENT propagates out of spawn() rather
+      // than only showing up later via onExit). Without this, the panel just
+      // sits blank forever with no indication anything went wrong. Surface it
+      // the same way a normal pty exit is surfaced (a terminal:data message),
+      // so the frontend needs no separate error-message plumbing.
+      const reason = (err as Error).message ?? String(err);
+      log(`[pty] failed to spawn claude for session ${sessionId}: ${reason}`);
+      send(socket, {
+        type: "terminal:data",
+        sessionId,
+        data: `\r\n[error] failed to start claude (is it on PATH?): ${reason}\r\n`,
+      });
+      return;
+    }
     sockets.set(sessionId, ptyProcess);
 
     ptyProcess.onData((data) => send(socket, { type: "terminal:data", sessionId, data }));
