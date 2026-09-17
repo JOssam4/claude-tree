@@ -124,6 +124,11 @@ export interface NodeDetailDTO {
   ancestry: NodeAncestryDTO;
 }
 
+/** Response body for POST /api/nodes/:uuid/branch. */
+export interface BranchResponseDTO {
+  newSessionId: string;
+}
+
 /** Summary counts produced by a backfill run, used for verification/reporting. */
 export interface BackfillSummary {
   projectsFound: number;
@@ -154,5 +159,52 @@ export interface TreeUpdateWsMessage extends TreeUpdateEvent {
   type: "tree:update";
 }
 
-/** Union of all server->client WS message types. Just one for now; grows as more are added (e.g. terminal:data in Milestone 5). */
-export type WsServerMessage = TreeUpdateWsMessage;
+/**
+ * Milestone 5: one chunk of a live `claude --resume <sessionId>` pty's
+ * stdout/stderr, forwarded verbatim to the client that opened it via
+ * `terminal:open`.
+ */
+export interface TerminalDataWsMessage {
+  type: "terminal:data";
+  sessionId: string;
+  data: string;
+}
+
+/** Union of all server->client WS message types. */
+export type WsServerMessage = TreeUpdateWsMessage | TerminalDataWsMessage;
+
+/** Client->server: open (or re-open) a live terminal resuming `sessionId`, sized to the caller's initial terminal dimensions. */
+export interface TerminalOpenWsMessage {
+  type: "terminal:open";
+  sessionId: string;
+  cols: number;
+  rows: number;
+}
+
+/** Client->server: forward raw keystrokes/paste input to the pty for `sessionId`. */
+export interface TerminalInputWsMessage {
+  type: "terminal:input";
+  sessionId: string;
+  data: string;
+}
+
+/** Client->server: the browser terminal was resized; propagate to the pty. */
+export interface TerminalResizeWsMessage {
+  type: "terminal:resize";
+  sessionId: string;
+  cols: number;
+  rows: number;
+}
+
+/** Client->server: tear down the pty for `sessionId` (panel closed). */
+export interface TerminalCloseWsMessage {
+  type: "terminal:close";
+  sessionId: string;
+}
+
+/** Union of all client->server WS message types (Milestone 5; tree:update has no client->server counterpart). */
+export type WsClientMessage =
+  | TerminalOpenWsMessage
+  | TerminalInputWsMessage
+  | TerminalResizeWsMessage
+  | TerminalCloseWsMessage;

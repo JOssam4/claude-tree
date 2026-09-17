@@ -4,7 +4,7 @@
  * proxy, see vite.config.ts) and prod (server can serve the built assets),
  * so no base URL configuration needed.
  */
-import type { NodeDetailDTO, ProjectSummaryDTO, ProjectTreeDTO } from "@claude-tree/shared";
+import type { BranchResponseDTO, NodeDetailDTO, ProjectSummaryDTO, ProjectTreeDTO } from "@claude-tree/shared";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -24,4 +24,13 @@ export function getProjectTree(slug: string): Promise<ProjectTreeDTO> {
 
 export function getNodeDetail(uuid: string): Promise<NodeDetailDTO> {
   return getJson<NodeDetailDTO>(`/api/nodes/${encodeURIComponent(uuid)}`);
+}
+
+/** Milestone 5: forks the node's history into a new, independently-resumable session (see server's sessionForker.ts). */
+export async function branchFromNode(uuid: string): Promise<BranchResponseDTO> {
+  const res = await fetch(`/api/nodes/${encodeURIComponent(uuid)}/branch`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`POST branch for ${uuid} failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as BranchResponseDTO;
 }

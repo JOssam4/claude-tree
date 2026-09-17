@@ -18,8 +18,14 @@ export function TurnNode({ data }: NodeProps<TurnNodeType>) {
       {data.isSessionRoot && <div className="turn-node__badge">{data.isSidechain ? "subagent root" : "session root"}</div>}
       <div className="turn-node__user">{data.userText ?? <em>(no user text — tool result/continuation)</em>}</div>
       {data.assistantText && <div className="turn-node__assistant">{data.assistantText}</div>}
-      {/* Placeholder affordance for Milestone 5 — not wired to any action yet. */}
-      <button className="turn-node__branch-btn" disabled title="Branch from here (Milestone 5)">
+      <button
+        className="turn-node__branch-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          data.onBranch(data.targetNodeUuid);
+        }}
+        title="Branch from here: forks this conversation's history into a new, independently-resumable session"
+      >
         ⑂ branch
       </button>
       <Handle type="source" position={Position.Bottom} />

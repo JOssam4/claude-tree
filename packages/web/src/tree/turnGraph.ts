@@ -25,6 +25,8 @@ export interface TurnNodeData extends Record<string, unknown> {
   timestamp: string;
   isSessionRoot: boolean;
   isSidechain: boolean;
+  /** Milestone 5: invoked with `targetNodeUuid` when this turn's "⑂ branch" button is clicked. */
+  onBranch: (targetNodeUuid: string) => void;
 }
 
 export type TurnNode = Node<TurnNodeData, "turn">;
@@ -84,7 +86,11 @@ interface BuildResult {
 }
 
 /** Recursively builds nodes/edges for one session subtree (its own turns plus every fork hanging off it). */
-function buildSessionSubtree(tree: SessionTreeNodeDTO, isRoot: boolean): BuildResult {
+function buildSessionSubtree(
+  tree: SessionTreeNodeDTO,
+  isRoot: boolean,
+  onBranch: (targetNodeUuid: string) => void,
+): BuildResult {
   const { session, nodes: rawNodes, forks } = tree;
   const turns = groupTurns(session.id, rawNodes);
   const nodes: TurnNode[] = [];
@@ -110,6 +116,7 @@ function buildSessionSubtree(tree: SessionTreeNodeDTO, isRoot: boolean): BuildRe
         timestamp: turn.lastNode.timestamp,
         isSessionRoot: isRoot && i === 0,
         isSidechain: session.isSidechain,
+        onBranch,
       },
     });
     // Linear-chain guarantee (see plan): within one session, turn i's parent is always turn i-1.
@@ -128,7 +135,7 @@ function buildSessionSubtree(tree: SessionTreeNodeDTO, isRoot: boolean): BuildRe
 
   for (const fork of forks) {
     const sourceTurnId = uuidToTurnId.get(fork.sourceNodeUuid);
-    const child = buildSessionSubtree(fork.session, true);
+    const child = buildSessionSubtree(fork.session, true, onBranch);
     nodes.push(...child.nodes);
     edges.push(...child.edges);
     const childRootId = child.nodes[0]?.id;
@@ -167,13 +174,13 @@ function layoutComponent(nodes: TurnNode[], edges: TurnEdge[]): TurnNode[] {
  * component per root session, placed side by side left-to-right so
  * disconnected trees never overlap. No synthetic super-root is added.
  */
-export function buildForestGraph(tree: ProjectTreeDTO): BuildResult {
+export function buildForestGraph(tree: ProjectTreeDTO, onBranch: (targetNodeUuid: string) => void): BuildResult {
   const allNodes: TurnNode[] = [];
   const allEdges: TurnEdge[] = [];
   let xOffset = 0;
 
   for (const root of tree.roots) {
-    const { nodes, edges } = buildSessionSubtree(root, true);
+    const { nodes, edges } = buildSessionSubtree(root, true, onBranch);
     if (nodes.length === 0) continue;
     const laidOut = layoutComponent(nodes, edges);
     const minX = Math.min(...laidOut.map((n) => n.position.x));

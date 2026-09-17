@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ProjectSummaryDTO, ProjectTreeDTO } from "@claude-tree/shared";
-import { getProjects, getProjectTree } from "./api/client";
+import { branchFromNode, getProjects, getProjectTree } from "./api/client";
 import { useTreeUpdates } from "./api/useTreeUpdates";
 import { ProjectList } from "./components/ProjectList";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { TreeCanvas } from "./components/TreeCanvas";
 
 export function App() {
@@ -10,6 +11,10 @@ export function App() {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [tree, setTree] = useState<ProjectTreeDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Milestone 5: the currently-open branch terminal, if any. Serves both "resume
+  // from here" and "start a new conversation from here" — same mechanism, just
+  // triggered from a node's branch button, per the plan.
+  const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null);
 
   const refetchProjects = useCallback(() => {
     getProjects()
@@ -41,6 +46,18 @@ export function App() {
     if (event.projectSlug === selectedSlug) refetchTree(event.projectSlug);
   });
 
+  const handleBranch = useCallback((targetNodeUuid: string) => {
+    branchFromNode(targetNodeUuid)
+      .then(({ newSessionId }) => {
+        setTerminalSessionId(newSessionId);
+        setError(null);
+        // The new session shows up in the tree on its own once the watcher
+        // indexes the freshly-written file and broadcasts tree:update — no
+        // explicit refetch needed here.
+      })
+      .catch((e: Error) => setError(e.message));
+  }, []);
+
   return (
     <div className="app">
       <aside className="app__sidebar">
@@ -49,8 +66,11 @@ export function App() {
       <main className="app__main">
         {error && <div className="app__error">{error}</div>}
         {!selectedSlug && <div className="tree-canvas__empty">Select a project to view its conversation tree.</div>}
-        {selectedSlug && tree && <TreeCanvas tree={tree} key={selectedSlug} />}
+        {selectedSlug && tree && <TreeCanvas tree={tree} onBranch={handleBranch} key={selectedSlug} />}
       </main>
+      {terminalSessionId && (
+        <TerminalPanel sessionId={terminalSessionId} onClose={() => setTerminalSessionId(null)} />
+      )}
     </div>
   );
 }

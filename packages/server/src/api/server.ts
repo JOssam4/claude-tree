@@ -10,6 +10,8 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type WebSocket from "ws";
 import type { TreeUpdateEvent, WsServerMessage } from "@claude-tree/shared";
 import type { DB } from "../db/client.js";
+import { createPtyManager } from "../resume/ptyManager.js";
+import { forkSessionFromNode } from "../resume/sessionForker.js";
 import { getNodeDetail } from "./nodeDetail.js";
 import { listProjectSummaries } from "./projectQueries.js";
 import { buildProjectTree } from "./treeBuilder.js";
@@ -74,12 +76,63 @@ export async function createApiServer(db: DB): Promise<ApiServer> {
     },
   );
 
+  // Milestone 5: forks the node's history into a brand-new session file (see
+  // resume/sessionForker.ts) and returns its id. Serves both "resume from
+  // here" and "start a new conversation from here" — same mechanism, per the plan.
+  app.post<{ Params: { uuid: string } }>(
+    "/api/nodes/:uuid/branch",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { uuid: { type: "string", pattern: UUID_PATTERN } },
+          required: ["uuid"],
+        },
+      },
+    },
+    async (request, reply) => {
+      let result;
+      try {
+        result = await forkSessionFromNode(db, request.params.uuid);
+      } catch (err) {
+        app.log.error(err);
+        reply.code(500);
+        return { error: `failed to fork session: ${(err as Error).message}` };
+      }
+      if (!result) {
+        reply.code(404);
+        return { error: `node not found: ${request.params.uuid}` };
+      }
+      return { newSessionId: result.newSessionId };
+    },
+  );
+
+  const ptyManager = createPtyManager(db, (msg) => app.log.info(msg));
+
   // Registered in its own encapsulated plugin context per @fastify/websocket convention.
+  // Shares this one endpoint between the tree:update broadcast (above) and
+  // Milestone 5's terminal:* messages, differentiated by each message's `type`
+  // field, per the plan's WS message shapes.
   await app.register(async (scoped) => {
     scoped.get("/ws", { websocket: true }, (socket) => {
       clients.add(socket);
-      socket.on("close", () => clients.delete(socket));
-      socket.on("error", () => clients.delete(socket));
+      socket.on("message", (raw: Buffer) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw.toString());
+        } catch {
+          return; // Malformed frame — ignore rather than crash the connection.
+        }
+        ptyManager.handleClientMessage(socket, parsed);
+      });
+      socket.on("close", () => {
+        clients.delete(socket);
+        ptyManager.handleSocketClosed(socket);
+      });
+      socket.on("error", () => {
+        clients.delete(socket);
+        ptyManager.handleSocketClosed(socket);
+      });
     });
   });
 
