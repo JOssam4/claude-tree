@@ -8,12 +8,16 @@
   ],
   "scripts": {
     "build": "npm run build --workspace packages/shared && npm run build --workspace packages/server && npm run build --workspace packages/web",
-    "backfill": "npm run backfill --workspace packages/server"
+    "backfill": "npm run backfill --workspace packages/server",
+    "test": "vitest run"
   },
   "engines": {
     "node": ">=22"
   },
   "volta": {
     "node": "22.23.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
   }
 }

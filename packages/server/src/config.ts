@@ -10,8 +10,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * delete anything under CLAUDE_HOME. That constraint is enforced by
  * convention (no fs write calls anywhere touch these paths), not by the
  * filesystem, so keep it that way in any code that imports this config.
+ *
+ * Test-only override: when CLAUDE_TREE_HOME_OVERRIDE is set (see
+ * packages/server/src/test/tempHome.ts), the whole app points at a throwaway
+ * mkdtemp'd fixture directory instead of the real ~/.claude, so the automated
+ * test suite never reads or writes real conversation history. Unset in every
+ * normal/production run, in which case this is byte-for-byte the prior
+ * (real-homedir-based) behavior — purely additive.
  */
-export const CLAUDE_HOME = path.join(os.homedir(), ".claude");
+export const CLAUDE_HOME = process.env.CLAUDE_TREE_HOME_OVERRIDE
+  ? path.resolve(process.env.CLAUDE_TREE_HOME_OVERRIDE)
+  : path.join(os.homedir(), ".claude");
 
 /** `~/.claude/projects/<slug>/` — one directory per project, containing session .jsonl files. */
 export const CLAUDE_PROJECTS_DIR = path.join(CLAUDE_HOME, "projects");
