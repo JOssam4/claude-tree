@@ -15,11 +15,16 @@ interface TreeCanvasProps {
   tree: ProjectTreeDTO;
   /** Milestone 5: called with a turn's targetNodeUuid when its "⑂ branch" button is clicked. */
   onBranch: (targetNodeUuid: string) => void;
+  /** Milestone 8: called with a turn's targetNodeUuid when its "⧉ copy resume command" button is clicked. */
+  onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>;
 }
 
 /** Renders one project's forest: a disconnected xyflow component per root session, dagre-laid-out. */
-export function TreeCanvas({ tree, onBranch }: TreeCanvasProps) {
-  const { nodes, edges } = useMemo(() => buildForestGraph(tree, onBranch), [tree, onBranch]);
+export function TreeCanvas({ tree, onBranch, onCopyResumeCommand }: TreeCanvasProps) {
+  const { nodes, edges } = useMemo(
+    () => buildForestGraph(tree, onBranch, onCopyResumeCommand),
+    [tree, onBranch, onCopyResumeCommand],
+  );
 
   if (nodes.length === 0) {
     return <div className="tree-canvas__empty">This project has no indexed sessions yet.</div>;

@@ -127,6 +127,14 @@ export interface NodeDetailDTO {
 /** Response body for POST /api/nodes/:uuid/branch. */
 export interface BranchResponseDTO {
   newSessionId: string;
+  /** The original project's cwd — `claude --resume` must be launched from here (see resumeCommand's doc). */
+  cwd: string;
+  /**
+   * Milestone 8: a ready-to-paste shell command (`cd '<cwd>' && claude --resume <newSessionId>`)
+   * that resumes this forked session from the user's own terminal, as an alternative to the
+   * embedded browser terminal. `cwd` is single-quote shell-escaped server-side.
+   */
+  resumeCommand: string;
 }
 
 /** Summary counts produced by a backfill run, used for verification/reporting. */

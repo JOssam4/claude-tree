@@ -13,6 +13,7 @@ describe("API routes (Fastify .inject, temp fixture DB + fixture projects dir)",
   let fixture: FixtureClaudeHome;
   let db: import("../db/client.js").DB;
   let apiServer: import("./server.js").ApiServer;
+  let runBackfill: typeof import("../indexer/backfill.js").runBackfill;
   const slug = "-tmp-api-project";
   let sessionId: string;
   let rootUuid: string;
@@ -24,7 +25,7 @@ describe("API routes (Fastify .inject, temp fixture DB + fixture projects dir)",
     vi.resetModules();
 
     const { openDb } = await import("../db/client.js");
-    const { runBackfill } = await import("../indexer/backfill.js");
+    ({ runBackfill } = await import("../indexer/backfill.js"));
     const { createApiServer } = await import("./server.js");
 
     sessionId = crypto.randomUUID();
@@ -100,7 +101,16 @@ describe("API routes (Fastify .inject, temp fixture DB + fixture projects dir)",
   it("POST /api/nodes/:uuid/branch writes the new fixture file into the temp projects dir and inserts correct DB rows", async () => {
     const res = await apiServer.app.inject({ method: "POST", url: `/api/nodes/${rootUuid}/branch` });
     expect(res.statusCode).toBe(200);
-    const { newSessionId } = res.json() as { newSessionId: string };
+    const { newSessionId, cwd, resumeCommand } = res.json() as {
+      newSessionId: string;
+      cwd: string;
+      resumeCommand: string;
+    };
+
+    // Milestone 8: the response also carries the original project's cwd and a
+    // ready-to-paste shell command built from it.
+    expect(cwd).toBe("/tmp/api-cwd");
+    expect(resumeCommand).toBe(`cd '/tmp/api-cwd' && claude --resume ${newSessionId}`);
 
     const newFilePath = path.join(fixture.projectsDir, slug, `${newSessionId}.jsonl`);
     expect(fs.existsSync(newFilePath)).toBe(true);
@@ -123,5 +133,26 @@ describe("API routes (Fastify .inject, temp fixture DB + fixture projects dir)",
   it("POST /api/nodes/:uuid/branch returns 404 for an unknown node uuid", async () => {
     const res = await apiServer.app.inject({ method: "POST", url: `/api/nodes/${crypto.randomUUID()}/branch` });
     expect(res.statusCode).toBe(404);
+  });
+
+  it("POST /api/nodes/:uuid/branch shell-escapes a cwd containing a single quote in resumeCommand", async () => {
+    const quirkySlug = "-tmp-api-project-quirky";
+    const quirkySessionId = crypto.randomUUID();
+    const quirkyRootUuid = crypto.randomUUID();
+    const quirkyCwd = "/tmp/o'brien's project";
+    writeJsonlFile(path.join(fixture.projectsDir, quirkySlug, `${quirkySessionId}.jsonl`), [
+      chainLine({ uuid: quirkyRootUuid, parentUuid: null, type: "user", text: "hi", cwd: quirkyCwd }),
+    ]);
+    await runBackfill(db, { projectsDir: fixture.projectsDir });
+
+    const res = await apiServer.app.inject({ method: "POST", url: `/api/nodes/${quirkyRootUuid}/branch` });
+    expect(res.statusCode).toBe(200);
+    const { newSessionId, cwd, resumeCommand } = res.json() as {
+      newSessionId: string;
+      cwd: string;
+      resumeCommand: string;
+    };
+    expect(cwd).toBe(quirkyCwd);
+    expect(resumeCommand).toBe(`cd '/tmp/o'\\''brien'\\''s project' && claude --resume ${newSessionId}`);
   });
 });

@@ -11,6 +11,7 @@ import type WebSocket from "ws";
 import type { TreeUpdateEvent, WsServerMessage } from "@claude-tree/shared";
 import type { DB } from "../db/client.js";
 import { createPtyManager } from "../resume/ptyManager.js";
+import { buildResumeCommand } from "../resume/resumeCommand.js";
 import { forkSessionFromNode } from "../resume/sessionForker.js";
 import { getNodeDetail } from "./nodeDetail.js";
 import { listProjectSummaries } from "./projectQueries.js";
@@ -103,7 +104,14 @@ export async function createApiServer(db: DB): Promise<ApiServer> {
         reply.code(404);
         return { error: `node not found: ${request.params.uuid}` };
       }
-      return { newSessionId: result.newSessionId };
+      // Milestone 8: hand back the copy-pasteable equivalent of what
+      // ptyManager.ts spawns, so the frontend can offer it as an alternative
+      // to the embedded terminal without a second branch call.
+      return {
+        newSessionId: result.newSessionId,
+        cwd: result.cwd,
+        resumeCommand: buildResumeCommand(result.cwd, result.newSessionId),
+      };
     },
   );
 

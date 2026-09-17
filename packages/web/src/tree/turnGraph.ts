@@ -27,6 +27,12 @@ export interface TurnNodeData extends Record<string, unknown> {
   isSidechain: boolean;
   /** Milestone 5: invoked with `targetNodeUuid` when this turn's "⑂ branch" button is clicked. */
   onBranch: (targetNodeUuid: string) => void;
+  /**
+   * Milestone 8: invoked with `targetNodeUuid` when this turn's "⧉ copy resume
+   * command" button is clicked; resolves to the ready-to-paste command, or
+   * null if the branch call failed (error already surfaced elsewhere by the caller).
+   */
+  onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>;
 }
 
 export type TurnNode = Node<TurnNodeData, "turn">;
@@ -113,6 +119,7 @@ function buildSessionSubtree(
   tree: SessionTreeNodeDTO,
   isRoot: boolean,
   onBranch: (targetNodeUuid: string) => void,
+  onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>,
 ): BuildResult {
   const { session, nodes: rawNodes, forks } = tree;
   const turns = groupTurns(session.id, rawNodes);
@@ -140,6 +147,7 @@ function buildSessionSubtree(
         isSessionRoot: isRoot && i === 0,
         isSidechain: session.isSidechain,
         onBranch,
+        onCopyResumeCommand,
       },
     });
     // Linear-chain guarantee (see plan): within one session, turn i's parent is always turn i-1.
@@ -185,7 +193,7 @@ function buildSessionSubtree(
       continue;
     }
 
-    const child = buildSessionSubtree(fork.session, true, onBranch);
+    const child = buildSessionSubtree(fork.session, true, onBranch, onCopyResumeCommand);
     nodes.push(...child.nodes);
     edges.push(...child.edges);
     const childRootId = child.nodes[0]?.id;
@@ -224,13 +232,19 @@ function layoutComponent(nodes: TreeFlowNode[], edges: TurnEdge[]): TreeFlowNode
  * component per root session, placed side by side left-to-right so
  * disconnected trees never overlap. No synthetic super-root is added.
  */
-export function buildForestGraph(tree: ProjectTreeDTO, onBranch: (targetNodeUuid: string) => void): BuildResult {
+export function buildForestGraph(
+  tree: ProjectTreeDTO,
+  onBranch: (targetNodeUuid: string) => void,
+  // Optional + defaulted so existing callers/tests that only exercise branch
+  // wiring don't need to change (Milestone 8 addition).
+  onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null> = () => Promise.resolve(null),
+): BuildResult {
   const allNodes: TreeFlowNode[] = [];
   const allEdges: TurnEdge[] = [];
   let xOffset = 0;
 
   for (const root of tree.roots) {
-    const { nodes, edges } = buildSessionSubtree(root, true, onBranch);
+    const { nodes, edges } = buildSessionSubtree(root, true, onBranch, onCopyResumeCommand);
     if (nodes.length === 0) continue;
     const laidOut = layoutComponent(nodes, edges);
     const minX = Math.min(...laidOut.map((n) => n.position.x));

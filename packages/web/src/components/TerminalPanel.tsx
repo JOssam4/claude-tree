@@ -3,9 +3,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { TerminalDataWsMessage, WsClientMessage } from "@claude-tree/shared";
+import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 
 interface TerminalPanelProps {
   sessionId: string;
+  /** Milestone 8: the same branch call's resumeCommand, so someone who opened this embedded terminal can still switch to their own. */
+  resumeCommand: string;
   onClose: () => void;
 }
 
@@ -16,8 +19,9 @@ interface TerminalPanelProps {
  * from tree:update broadcasts by each message's `type` field — see
  * packages/server/src/api/server.ts).
  */
-export function TerminalPanel({ sessionId, onClose }: TerminalPanelProps) {
+export function TerminalPanel({ sessionId, resumeCommand, onClose }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
     const term = new Terminal({ cursorBlink: true, fontSize: 13, convertEol: true });
@@ -86,9 +90,18 @@ export function TerminalPanel({ sessionId, onClose }: TerminalPanelProps) {
     <div className="terminal-panel">
       <div className="terminal-panel__header">
         <span className="terminal-panel__title">Branch terminal — session {sessionId}</span>
-        <button className="terminal-panel__close" onClick={onClose} title="Close terminal">
-          ✕
-        </button>
+        <div className="terminal-panel__actions">
+          <button
+            className="terminal-panel__copy"
+            onClick={() => copy(resumeCommand)}
+            title="Copy a ready-to-run `claude --resume` command, to continue this branch in your own terminal instead"
+          >
+            {copied ? "Copied!" : "⧉ copy command"}
+          </button>
+          <button className="terminal-panel__close" onClick={onClose} title="Close terminal">
+            ✕
+          </button>
+        </div>
       </div>
       <div className="terminal-panel__body" ref={containerRef} />
     </div>
