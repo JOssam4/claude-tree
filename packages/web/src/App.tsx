@@ -17,18 +17,26 @@ export function App() {
   // mechanism, just triggered from a node's branch button, per the plan.
   const [terminalBranch, setTerminalBranch] = useState<BranchResponseDTO | null>(null);
 
-  // Milestone 8: caches one branch result per source node uuid for this session's
+  // Milestone 8: caches one branch call per source node uuid for this session's
   // lifetime, so clicking both "⑂ branch" and "⧉ copy resume command" for the same
-  // node forks only ONE new session file, not two.
-  const branchCacheRef = useRef(new Map<string, BranchResponseDTO>());
+  // node forks only ONE new session file, not two. Caches the in-flight PROMISE
+  // itself (not just the resolved result) and stores it synchronously before any
+  // await — otherwise two calls issued back-to-back (e.g. a rapid double-click, or
+  // clicking "branch" then immediately "copy resume command") would both miss an
+  // empty cache and both hit the API before either populated it, forking two
+  // session files for one logical click. A failed call evicts itself so a later
+  // click can retry instead of being stuck replaying the same rejection.
+  const branchCacheRef = useRef(new Map<string, Promise<BranchResponseDTO>>());
 
   const getOrCreateBranch = useCallback((targetNodeUuid: string): Promise<BranchResponseDTO> => {
     const cached = branchCacheRef.current.get(targetNodeUuid);
-    if (cached) return Promise.resolve(cached);
-    return branchFromNode(targetNodeUuid).then((result) => {
-      branchCacheRef.current.set(targetNodeUuid, result);
-      return result;
+    if (cached) return cached;
+    const pending = branchFromNode(targetNodeUuid).catch((err: Error) => {
+      branchCacheRef.current.delete(targetNodeUuid);
+      throw err;
     });
+    branchCacheRef.current.set(targetNodeUuid, pending);
+    return pending;
   }, []);
 
   const refetchProjects = useCallback(() => {
