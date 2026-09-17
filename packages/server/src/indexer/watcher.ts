@@ -130,6 +130,16 @@ function getSessionRow(
  * the duration of a single backfill pass, so the watcher — which reacts to
  * files arriving independently, possibly long after the parent was indexed —
  * has no such map available and must recover it from the DB instead).
+ *
+ * A sidechain file typically receives many `change` events over its lifetime
+ * (one per debounced write burst), but the link only needs to be established
+ * once. Without this check, every single tail event for an active subagent
+ * would re-scan and JSON.parse *every* node in the parent session's
+ * content_raw looking for a match that was already found minutes ago —
+ * observed directly against a live long-running subagent session during
+ * review (15+ tail events in under 30s, each re-scanning the full parent
+ * chain). Bail out immediately once a link already exists for this sidechain
+ * session so the expensive scan only ever runs while still unlinked.
  */
 function linkSidechainForFile(
   db: DB,
@@ -138,6 +148,11 @@ function linkSidechainForFile(
   sidechainSessionId: string,
   log: WatcherLogFn,
 ): void {
+  const alreadyLinked = db
+    .prepare(`SELECT 1 FROM branch_edges WHERE target_session_id = ? AND edge_type = 'subagent'`)
+    .get(sidechainSessionId);
+  if (alreadyLinked) return;
+
   const rows = db.prepare(`SELECT uuid, content_raw as contentRaw FROM nodes WHERE session_id = ?`).all(
     parentSessionId,
   ) as { uuid: string; contentRaw: string }[];
