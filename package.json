@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace packages/shared && npm run build --workspace packages/server",
+    "build": "npm run build --workspace packages/shared && npm run build --workspace packages/server && npm run build --workspace packages/web",
     "backfill": "npm run backfill --workspace packages/server"
   },
   "engines": {

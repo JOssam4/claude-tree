@@ -2,4 +2,5 @@ node_modules/
 dist/
 *.log
 packages/server/data/
+.dev-screenshots/
 .DS_Store

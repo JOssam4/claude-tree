@@ -1,0 +1,159 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #1a1a1a;
+  background: #f4f5f7;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.app__sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid #ddd;
+  background: #fff;
+  padding: 12px;
+}
+
+.app__main {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.app__error {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  background: #fee;
+  border: 1px solid #f99;
+  color: #900;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.project-list h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin: 4px 0 12px;
+}
+.project-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.project-list__empty {
+  color: #888;
+  font-size: 13px;
+}
+.project-list__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid #e2e2e2;
+  border-radius: 6px;
+  background: #fafafa;
+  cursor: pointer;
+}
+.project-list__item:hover {
+  background: #eef2ff;
+}
+.project-list__item--active {
+  border-color: #5b6ee8;
+  background: #e8ecff;
+}
+.project-list__cwd {
+  font-size: 12.5px;
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+.project-list__meta {
+  font-size: 11px;
+  color: #777;
+  margin-top: 2px;
+}
+
+.tree-canvas {
+  width: 100%;
+  height: 100%;
+}
+.tree-canvas__empty {
+  padding: 24px;
+  color: #777;
+}
+
+.turn-node {
+  width: 260px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.turn-node--root {
+  border-color: #5b6ee8;
+  border-width: 2px;
+}
+.turn-node--sidechain {
+  background: #fbf7ff;
+}
+.turn-node__badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5b6ee8;
+  margin-bottom: 4px;
+}
+.turn-node__user {
+  font-weight: 600;
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  max-height: 4.5em;
+  overflow: hidden;
+}
+.turn-node__assistant {
+  color: #444;
+  white-space: pre-wrap;
+  max-height: 4.5em;
+  overflow: hidden;
+}
+.turn-node__branch-btn {
+  margin-top: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  background: #f4f4f4;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Fork edges: branch (user-initiated) vs subagent (spawned Task) get visually distinct treatment. */
+.edge-branch path {
+  stroke: #e8975b;
+  stroke-width: 2;
+}
+.edge-subagent path {
+  stroke: #9b59d0;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
