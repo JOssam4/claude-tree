@@ -1,4 +1,5 @@
 import type { ConversationSummaryDTO } from '@claude-tree/shared';
+import {Conversation} from "./Conversation";
 
 interface ConversationListProps {
   conversations: ConversationSummaryDTO[];
@@ -15,17 +16,7 @@ export function ConversationList({ conversations, selectedSessionId, onSelect }:
       <ul>
         {conversations.map((c) => (
           <li key={c.sessionId}>
-            <button
-              className={
-                c.sessionId === selectedSessionId
-                  ? 'conversation-list__item conversation-list__item--active'
-                  : 'conversation-list__item'
-              }
-              onClick={() => onSelect(c.sessionId)}
-            >
-              <div className="conversation-list__title">{c.aiTitle ?? '(untitled conversation)'}</div>
-              <div className="conversation-list__meta">{c.projectCwd}</div>
-            </button>
+            <Conversation conversation={c} selectedSessionId={selectedSessionId} onSelect={onSelect} />
           </li>
         ))}
       </ul>
