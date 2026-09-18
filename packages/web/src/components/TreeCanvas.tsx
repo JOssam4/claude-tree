@@ -34,7 +34,15 @@ export function TreeCanvas({ tree, onCopyResumeCommand }: TreeCanvasProps) {
 
   return (
     <div className="tree-canvas">
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={0.05} proOptions={{ hideAttribution: true }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        minZoom={0.05}
+        proOptions={{ hideAttribution: true }}
+        colorMode="system"
+      >
         <Background />
         <Controls />
         <MiniMap pannable zoomable />
