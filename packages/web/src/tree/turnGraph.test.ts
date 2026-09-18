@@ -237,7 +237,7 @@ describe("buildForestGraph / fork attachment", () => {
     const { edges } = buildForestGraph(tree);
     const forkEdge = edges.find((e) => e.id.startsWith("fork-"));
     expect(forkEdge?.className).toBe("edge-subagent");
-    expect(forkEdge?.label).toBe("subagent");
+    expect(forkEdge?.label).toBe("spawned subagent");
     expect(forkEdge?.source).toBe(`${sessionId}#0`);
   });
 

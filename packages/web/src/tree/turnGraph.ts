@@ -19,7 +19,7 @@
  */
 import dagre from "dagre";
 import type { Edge, Node } from "@xyflow/react";
-import type { NodeDTO, ProjectTreeDTO, SessionTreeNodeDTO } from "@claude-tree/shared";
+import type { NodeDTO, ProjectTreeDTO, SessionForkDTO, SessionTreeNodeDTO } from "@claude-tree/shared";
 
 export interface TurnNodeData extends Record<string, unknown> {
   sessionId: string;
@@ -93,6 +93,17 @@ function preview(text: string | null): string | null {
   const trimmed = text.trim();
   if (trimmed.length <= 20000) return trimmed;
   return `${trimmed.slice(0, 20000)}…`;
+}
+
+/**
+ * Label for a fork edge. "subagent" edges are a spawned Task, automatically
+ * created by Claude Code itself; "branch" edges are the opposite — a new
+ * conversation the user deliberately resumed/forked by hand from that node.
+ * The label names that distinction directly rather than echoing the DB's
+ * internal edgeType string.
+ */
+function forkEdgeLabel(fork: SessionForkDTO): string {
+  return fork.edgeType === "subagent" ? "spawned subagent" : "manual branch";
 }
 
 /** The {width, height} dagre should reserve for a node — bigger for the single expanded turn, if any. */
@@ -277,15 +288,15 @@ function buildSessionSubtree(
     const child = buildSessionSubtree(fork.session, true, expandedTurnId, onToggleExpand, onCopyResumeCommand);
     nodes.push(...child.nodes);
     edges.push(...child.edges);
-    const childRootId = child.nodes[0]?.id;
-    if (childRootId) {
+    const childRoot = child.nodes[0];
+    if (childRoot) {
       edges.push({
-        id: `fork-${fork.sourceNodeUuid}-${childRootId}`,
+        id: `fork-${fork.sourceNodeUuid}-${childRoot.id}`,
         source: sourceTurnId,
-        target: childRootId,
+        target: childRoot.id,
         type: "smoothstep",
         className: fork.edgeType === "subagent" ? "edge-subagent" : "edge-branch",
-        label: fork.edgeType,
+        label: forkEdgeLabel(fork),
         data: {},
       });
     }
