@@ -9,7 +9,7 @@ import type { TurnNode as TurnNodeType } from '../tree/turnGraph';
  * to touch this component again.
  */
 export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, failed, copy } = useCopyToClipboard();
 
   return (
     <div
@@ -67,7 +67,7 @@ export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
           }}
           title="Branch from here and copy a ready-to-run `claude --resume` command to paste into your own terminal"
         >
-          {copied ? 'Copied!' : '⧉ copy resume command'}
+          {copied ? 'Copied!' : failed ? 'Copy failed' : '⧉ copy resume command'}
         </button>
       </div>
       <Handle type="source" position={Position.Bottom} />

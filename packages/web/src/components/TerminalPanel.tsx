@@ -21,7 +21,7 @@ interface TerminalPanelProps {
  */
 export function TerminalPanel({ sessionId, resumeCommand, onClose }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, failed, copy } = useCopyToClipboard();
 
   useEffect(() => {
     const term = new Terminal({ cursorBlink: true, fontSize: 13, convertEol: true });
@@ -96,7 +96,7 @@ export function TerminalPanel({ sessionId, resumeCommand, onClose }: TerminalPan
             onClick={() => copy(resumeCommand)}
             title="Copy a ready-to-run `claude --resume` command, to continue this branch in your own terminal instead"
           >
-            {copied ? "Copied!" : "⧉ copy command"}
+            {copied ? "Copied!" : failed ? "Copy failed" : "⧉ copy command"}
           </button>
           <button className="terminal-panel__close" onClick={onClose} title="Close terminal">
             ✕
