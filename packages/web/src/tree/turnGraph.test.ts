@@ -15,6 +15,8 @@ function makeNode(opts: {
   seq: number;
   sessionId: string;
   text?: string;
+  /** Marks this line as a Claude Code-injected companion (e.g. a spliced-in skill/command body), not something the human typed. */
+  isMeta?: boolean;
 }): NodeDTO {
   return {
     uuid: opts.uuid,
@@ -23,7 +25,7 @@ function makeNode(opts: {
     type: opts.type,
     role: opts.type === "user" ? "user" : "assistant",
     contentText: opts.text ?? null,
-    contentRaw: "{}",
+    contentRaw: JSON.stringify({ isMeta: opts.isMeta ?? false }),
     timestamp: `2026-01-01T00:00:${String(opts.seq).padStart(2, "0")}Z`,
     seq: opts.seq,
   };
@@ -113,18 +115,92 @@ describe("buildForestGraph / turn grouping", () => {
     expect(nodes).toEqual([]);
     expect(edges).toEqual([]);
   });
+
+  it("folds tool-call/tool-result action lines (no real text) into the surrounding turn instead of starting new boxes", () => {
+    const sessionId = "s1";
+    const u1 = makeUuid("u");
+    const toolCall = makeUuid("a"); // assistant line with only a tool_use block: no text extracted
+    const toolResult = makeUuid("u"); // synthetic user-type tool_result reply: no text extracted
+    const a1 = makeUuid("a");
+    const tree = makeProjectTree([
+      makeSessionTree(makeSession(sessionId), [
+        makeNode({ uuid: u1, parentUuid: null, type: "user", seq: 0, sessionId, text: "run the tests" }),
+        makeNode({ uuid: toolCall, parentUuid: u1, type: "assistant", seq: 1, sessionId }), // no text
+        makeNode({ uuid: toolResult, parentUuid: toolCall, type: "user", seq: 2, sessionId }), // no text
+        makeNode({ uuid: a1, parentUuid: toolResult, type: "assistant", seq: 3, sessionId, text: "tests pass" }),
+      ]),
+    ]);
+
+    const { nodes, edges } = buildForestGraph(tree, noopBranch);
+    const turnNodes = nodes.filter(isTurnNode);
+    expect(turnNodes).toHaveLength(1);
+    expect(turnNodes[0]?.data.memberUuids).toEqual([u1, toolCall, toolResult, a1]);
+    expect(turnNodes[0]?.data.userText).toBe("run the tests");
+    expect(turnNodes[0]?.data.assistantText).toBe("tests pass");
+    expect(edges).toHaveLength(0);
+  });
+
+  it("folds an injected skill/command body (isMeta line with real text) into the preceding turn instead of a new box", () => {
+    const sessionId = "s1";
+    const u1 = makeUuid("u");
+    const skillBody = makeUuid("u"); // isMeta companion line Claude Code splices in right after the typed command
+    const a1 = makeUuid("a");
+    const tree = makeProjectTree([
+      makeSessionTree(makeSession(sessionId), [
+        makeNode({ uuid: u1, parentUuid: null, type: "user", seq: 0, sessionId, text: "/simplify" }),
+        makeNode({
+          uuid: skillBody,
+          parentUuid: u1,
+          type: "user",
+          seq: 1,
+          sessionId,
+          text: "# Simplify skill\n\nFull markdown body of the skill goes here...",
+          isMeta: true,
+        }),
+        makeNode({ uuid: a1, parentUuid: skillBody, type: "assistant", seq: 2, sessionId, text: "Done." }),
+      ]),
+    ]);
+
+    const { nodes, edges } = buildForestGraph(tree, noopBranch);
+    const turnNodes = nodes.filter(isTurnNode);
+    expect(turnNodes).toHaveLength(1);
+    expect(turnNodes[0]?.data.userText).toBe("/simplify");
+    expect(turnNodes[0]?.data.assistantText).toBe("Done.");
+    expect(turnNodes[0]?.data.memberUuids).toEqual([u1, skillBody, a1]);
+    expect(edges).toHaveLength(0);
+  });
+
+  it("targets the latest real message for resume, not a trailing tool-call action node", () => {
+    const sessionId = "s1";
+    const u1 = makeUuid("u");
+    const a1 = makeUuid("a"); // real assistant reply
+    const trailingToolCall = makeUuid("a"); // assistant calls a tool after replying, no text, ends the turn
+    const tree = makeProjectTree([
+      makeSessionTree(makeSession(sessionId), [
+        makeNode({ uuid: u1, parentUuid: null, type: "user", seq: 0, sessionId, text: "do a thing" }),
+        makeNode({ uuid: a1, parentUuid: u1, type: "assistant", seq: 1, sessionId, text: "sure, one sec" }),
+        makeNode({ uuid: trailingToolCall, parentUuid: a1, type: "assistant", seq: 2, sessionId }), // no text
+      ]),
+    ]);
+
+    const { nodes } = buildForestGraph(tree, noopBranch);
+    const turnNodes = nodes.filter(isTurnNode);
+    expect(turnNodes).toHaveLength(1);
+    // targetNodeUuid should resolve to a1 (last real message), not trailingToolCall.
+    expect(turnNodes[0]?.data.targetNodeUuid).toBe(a1);
+  });
 });
 
 describe("buildForestGraph / fork attachment", () => {
   function buildThreeTurnRoot(sessionId: string) {
     const uuids = { u1: makeUuid("u"), a1: makeUuid("a"), u2: makeUuid("u"), a2: makeUuid("a"), u3: makeUuid("u"), a3: makeUuid("a") };
     const nodes = [
-      makeNode({ uuid: uuids.u1, parentUuid: null, type: "user", seq: 0, sessionId }),
-      makeNode({ uuid: uuids.a1, parentUuid: uuids.u1, type: "assistant", seq: 1, sessionId }),
-      makeNode({ uuid: uuids.u2, parentUuid: uuids.a1, type: "user", seq: 2, sessionId }),
-      makeNode({ uuid: uuids.a2, parentUuid: uuids.u2, type: "assistant", seq: 3, sessionId }),
-      makeNode({ uuid: uuids.u3, parentUuid: uuids.a2, type: "user", seq: 4, sessionId }),
-      makeNode({ uuid: uuids.a3, parentUuid: uuids.u3, type: "assistant", seq: 5, sessionId }),
+      makeNode({ uuid: uuids.u1, parentUuid: null, type: "user", seq: 0, sessionId, text: "msg1" }),
+      makeNode({ uuid: uuids.a1, parentUuid: uuids.u1, type: "assistant", seq: 1, sessionId, text: "reply1" }),
+      makeNode({ uuid: uuids.u2, parentUuid: uuids.a1, type: "user", seq: 2, sessionId, text: "msg2" }),
+      makeNode({ uuid: uuids.a2, parentUuid: uuids.u2, type: "assistant", seq: 3, sessionId, text: "reply2" }),
+      makeNode({ uuid: uuids.u3, parentUuid: uuids.a2, type: "user", seq: 4, sessionId, text: "msg3" }),
+      makeNode({ uuid: uuids.a3, parentUuid: uuids.u3, type: "assistant", seq: 5, sessionId, text: "reply3" }),
     ];
     return { nodes, uuids };
   }
@@ -138,7 +214,7 @@ describe("buildForestGraph / fork attachment", () => {
       edgeType: "branch",
       sourceNodeUuid: uuids.a2, // belongs to the MIDDLE turn (turn index 1)
       session: makeSessionTree(makeSession(forkSessionId), [
-        makeNode({ uuid: forkNode, parentUuid: null, type: "user", seq: 0, sessionId: forkSessionId }),
+        makeNode({ uuid: forkNode, parentUuid: null, type: "user", seq: 0, sessionId: forkSessionId, text: "forked msg" }),
       ]),
     };
     const tree = makeProjectTree([makeSessionTree(makeSession(sessionId), nodes, [fork])]);
@@ -158,7 +234,7 @@ describe("buildForestGraph / fork attachment", () => {
       edgeType: "subagent",
       sourceNodeUuid: uuids.a1, // first turn
       session: makeSessionTree(makeSession(forkSessionId), [
-        makeNode({ uuid: forkNode, parentUuid: null, type: "user", seq: 0, sessionId: forkSessionId }),
+        makeNode({ uuid: forkNode, parentUuid: null, type: "user", seq: 0, sessionId: forkSessionId, text: "forked msg" }),
       ]),
     };
     const tree = makeProjectTree([makeSessionTree(makeSession(sessionId), nodes, [fork])]);
@@ -203,21 +279,21 @@ describe("buildForestGraph / fork attachment", () => {
     const uC = makeUuid("u");
 
     const treeC = makeSessionTree(makeSession(sessionC), [
-      makeNode({ uuid: uC, parentUuid: null, type: "user", seq: 0, sessionId: sessionC }),
+      makeNode({ uuid: uC, parentUuid: null, type: "user", seq: 0, sessionId: sessionC, text: "subagent task" }),
     ]);
     const treeB = makeSessionTree(
       makeSession(sessionB),
       [
-        makeNode({ uuid: uB, parentUuid: null, type: "user", seq: 0, sessionId: sessionB }),
-        makeNode({ uuid: aB, parentUuid: uB, type: "assistant", seq: 1, sessionId: sessionB }),
+        makeNode({ uuid: uB, parentUuid: null, type: "user", seq: 0, sessionId: sessionB, text: "msg B" }),
+        makeNode({ uuid: aB, parentUuid: uB, type: "assistant", seq: 1, sessionId: sessionB, text: "reply B" }),
       ],
       [{ edgeType: "subagent", sourceNodeUuid: aB, session: treeC }],
     );
     const treeA = makeSessionTree(
       makeSession(sessionA),
       [
-        makeNode({ uuid: uA, parentUuid: null, type: "user", seq: 0, sessionId: sessionA }),
-        makeNode({ uuid: aA, parentUuid: uA, type: "assistant", seq: 1, sessionId: sessionA }),
+        makeNode({ uuid: uA, parentUuid: null, type: "user", seq: 0, sessionId: sessionA, text: "msg A" }),
+        makeNode({ uuid: aA, parentUuid: uA, type: "assistant", seq: 1, sessionId: sessionA, text: "reply A" }),
       ],
       [{ edgeType: "branch", sourceNodeUuid: aA, session: treeB }],
     );
@@ -237,6 +313,51 @@ describe("buildForestGraph / fork attachment", () => {
   });
 });
 
+describe("buildForestGraph / click-to-expand", () => {
+  function buildLinearSession(sessionId: string) {
+    const u1 = makeUuid("u");
+    const a1 = makeUuid("a");
+    const u2 = makeUuid("u");
+    const a2 = makeUuid("a");
+    return makeProjectTree([
+      makeSessionTree(makeSession(sessionId), [
+        makeNode({ uuid: u1, parentUuid: null, type: "user", seq: 0, sessionId, text: "hello" }),
+        makeNode({ uuid: a1, parentUuid: u1, type: "assistant", seq: 1, sessionId, text: "hi" }),
+        makeNode({ uuid: u2, parentUuid: a1, type: "user", seq: 2, sessionId, text: "again" }),
+        makeNode({ uuid: a2, parentUuid: u2, type: "assistant", seq: 3, sessionId, text: "sure" }),
+      ]),
+    ]);
+  }
+
+  it("marks only the expanded turn's data.isExpanded, defaulting to false for everyone else", () => {
+    const sessionId = "s1";
+    const tree = buildLinearSession(sessionId);
+    const expandedTurnId = `${sessionId}#0`;
+
+    const { nodes } = buildForestGraph(tree, noopBranch, undefined, expandedTurnId);
+    const turnNodes = nodes.filter(isTurnNode);
+    expect(turnNodes.find((n) => n.id === expandedTurnId)?.data.isExpanded).toBe(true);
+    expect(turnNodes.find((n) => n.id !== expandedTurnId)?.data.isExpanded).toBe(false);
+  });
+
+  it("reserves extra vertical room for the expanded turn instead of overlapping its neighbor", () => {
+    const sessionId = "s1";
+    const tree = buildLinearSession(sessionId);
+    const expandedTurnId = `${sessionId}#0`;
+
+    const collapsed = buildForestGraph(tree, noopBranch);
+    const collapsedTurns = collapsed.nodes.filter(isTurnNode);
+    const collapsedGap = (collapsedTurns[1]?.position.y ?? 0) - (collapsedTurns[0]?.position.y ?? 0);
+
+    const expanded = buildForestGraph(tree, noopBranch, undefined, expandedTurnId);
+    const expandedTurns = expanded.nodes.filter(isTurnNode);
+    const expandedGap = (expandedTurns[1]?.position.y ?? 0) - (expandedTurns[0]?.position.y ?? 0);
+
+    // Dagre must reserve strictly more room below a bigger box, so the next turn never overlaps it.
+    expect(expandedGap).toBeGreaterThan(collapsedGap);
+  });
+});
+
 describe("buildForestGraph / dagre layout", () => {
   it("lays out multiple root sessions side by side with non-overlapping bounding boxes", () => {
     const sessionX = "sess-X";
@@ -249,14 +370,14 @@ describe("buildForestGraph / dagre layout", () => {
     const yu3 = makeUuid("u");
 
     const treeX = makeSessionTree(makeSession(sessionX), [
-      makeNode({ uuid: xu1, parentUuid: null, type: "user", seq: 0, sessionId: sessionX }),
-      makeNode({ uuid: xa1, parentUuid: xu1, type: "assistant", seq: 1, sessionId: sessionX }),
-      makeNode({ uuid: xu2, parentUuid: xa1, type: "user", seq: 2, sessionId: sessionX }),
+      makeNode({ uuid: xu1, parentUuid: null, type: "user", seq: 0, sessionId: sessionX, text: "x msg 1" }),
+      makeNode({ uuid: xa1, parentUuid: xu1, type: "assistant", seq: 1, sessionId: sessionX, text: "x reply 1" }),
+      makeNode({ uuid: xu2, parentUuid: xa1, type: "user", seq: 2, sessionId: sessionX, text: "x msg 2" }),
     ]);
     const treeY = makeSessionTree(makeSession(sessionY), [
-      makeNode({ uuid: yu1, parentUuid: null, type: "user", seq: 0, sessionId: sessionY }),
-      makeNode({ uuid: yu2, parentUuid: yu1, type: "user", seq: 1, sessionId: sessionY }),
-      makeNode({ uuid: yu3, parentUuid: yu2, type: "user", seq: 2, sessionId: sessionY }),
+      makeNode({ uuid: yu1, parentUuid: null, type: "user", seq: 0, sessionId: sessionY, text: "y msg 1" }),
+      makeNode({ uuid: yu2, parentUuid: yu1, type: "user", seq: 1, sessionId: sessionY, text: "y msg 2" }),
+      makeNode({ uuid: yu3, parentUuid: yu2, type: "user", seq: 2, sessionId: sessionY, text: "y msg 3" }),
     ]);
 
     const { nodes } = buildForestGraph(makeProjectTree([treeX, treeY]), noopBranch);

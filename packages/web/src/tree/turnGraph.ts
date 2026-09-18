@@ -1,14 +1,21 @@
 /**
  * Turns a ProjectTreeDTO forest into an @xyflow/react node/edge graph.
  *
- * Grouping rule: every `user`-type node starts a new "turn"; every following
- * node (attachment/system/assistant) folds into that turn until the next
- * user node. This is intentionally naive — Claude Code also emits tool-result
- * replies and local-command output as `user`-type lines, so some turn boxes
- * end up empty-looking (no human-authored text). That's an accepted
- * simplification for Milestone 4: turn count stays a direct, predictable
- * function of `nodes.filter(n => n.type === 'user').length`, and semantic
- * dedup of synthetic user lines is left for later polish.
+ * Grouping rule: a new "turn" starts only on a `user`-type node that carries
+ * real human-authored text; every following node folds into that turn until
+ * the next such node. Two Claude Code behaviors would otherwise pollute that
+ * text:
+ *  1. Tool-call (`assistant`-type, no text — only tool_use blocks) and
+ *     tool-result (`user`-type, no text — only tool_result blocks) lines.
+ *     `extractContentText` only ever populates `contentText` from
+ *     `text`-typed content blocks, so these "action" lines always have
+ *     `contentText === null`.
+ *  2. Skill/slash-command bodies, spliced in as their OWN `user`-type line
+ *     (marked `isMeta: true` in the raw JSONL) immediately after the line
+ *     the human actually typed — this one DOES carry real `text` content
+ *     (the skill's full markdown), so `contentText` alone can't catch it.
+ * `hasRealText` folds both into the surrounding turn instead of starting a
+ * new box or becoming a resume target for it.
  */
 import dagre from "dagre";
 import type { Edge, Node } from "@xyflow/react";
@@ -106,12 +113,38 @@ function nodeDimensions(node: TreeFlowNode, expandedTurnId: string | null): { wi
   return { width: NODE_WIDTH, height: NODE_HEIGHT };
 }
 
+/**
+ * True when this chain line is a synthetic companion Claude Code injects
+ * alongside the user's own line — e.g. a Skill/command's full body, spliced
+ * in as its own `user`-type line (`isMeta: true`, often with `sourceToolUseID`
+ * set) right after the line the human actually typed. It carries real
+ * `text`-block content, so `contentText` alone can't distinguish it from a
+ * genuine message; `isMeta` (preserved verbatim in `contentRaw`, since
+ * NodeDTO's own fields don't carry it) is the only signal. Never present on
+ * the DB's own synthesized fields, so a parse failure just means "not meta."
+ */
+function isSyntheticMetaLine(node: NodeDTO): boolean {
+  try {
+    const raw = JSON.parse(node.contentRaw) as { isMeta?: unknown };
+    return raw.isMeta === true;
+  } catch {
+    return false;
+  }
+}
+
+/** True for a real, human/model-authored `user` or `assistant` message — false for a tool-call/tool-result "action" line or an injected skill/command body (see module doc). */
+function hasRealText(node: NodeDTO): boolean {
+  return node.contentText !== null && node.contentText.trim().length > 0 && !isSyntheticMetaLine(node);
+}
+
 interface Turn {
   id: string;
   memberUuids: string[];
   userNode: NodeDTO | null;
   assistantNode: NodeDTO | null;
   lastNode: NodeDTO;
+  /** Latest real user/assistant message in this turn — what a resume/branch action should target, never a trailing tool-call action node. */
+  targetNode: NodeDTO | null;
 }
 
 /** Groups one session's flat node list into turn boxes (see module doc for the rule). */
@@ -120,19 +153,26 @@ function groupTurns(sessionId: string, nodes: NodeDTO[]): Turn[] {
   const turns: Turn[] = [];
   let current: Turn | null = null;
   for (const node of sorted) {
-    if (node.type === "user" || current === null) {
+    const isRealUserMessage = node.type === "user" && hasRealText(node);
+    if (isRealUserMessage || current === null) {
       current = {
         id: `${sessionId}#${turns.length}`,
         memberUuids: [node.uuid],
-        userNode: node.type === "user" ? node : null,
+        userNode: isRealUserMessage ? node : null,
         assistantNode: null,
         lastNode: node,
+        targetNode: null,
       };
       turns.push(current);
     } else {
       current.memberUuids.push(node.uuid);
       current.lastNode = node;
-      if (node.type === "assistant" && !current.assistantNode) current.assistantNode = node;
+    }
+    if (node.type === "assistant" && hasRealText(node) && !current.assistantNode) {
+      current.assistantNode = node;
+    }
+    if ((node.type === "user" || node.type === "assistant") && hasRealText(node)) {
+      current.targetNode = node;
     }
   }
   return turns;
@@ -163,7 +203,40 @@ function buildSessionSubtree(
     for (const uuid of turn.memberUuids) uuidToTurnId.set(uuid, turn.id);
   }
 
+  // A turn renders only if it contains a real user or assistant message — an
+  // action-only turn (tool calls/results with no human-authored or
+  // model-authored text) is folded into the graph structurally (its member
+  // uuids still resolve via uuidToTurnId) but never gets its own box. Given
+  // the grouping rule, this can only ever happen for turn 0 (every later
+  // turn is created BY a real user message, so it's always visible).
+  const visible = turns.map((turn) => turn.userNode !== null || turn.assistantNode !== null);
+  const firstVisibleIndex = visible.indexOf(true);
+
+  // Routes a turn id (possibly hidden) to the nearest visible turn's id, so
+  // fork edges sourced from an action node still land somewhere on screen.
+  const turnIdToVisibleId = new Map<string, string>();
   turns.forEach((turn, i) => {
+    if (visible[i]) {
+      turnIdToVisibleId.set(turn.id, turn.id);
+      return;
+    }
+    for (let j = i - 1; j >= 0; j--) {
+      if (visible[j]) {
+        turnIdToVisibleId.set(turn.id, turns[j]!.id);
+        return;
+      }
+    }
+    for (let j = i + 1; j < turns.length; j++) {
+      if (visible[j]) {
+        turnIdToVisibleId.set(turn.id, turns[j]!.id);
+        return;
+      }
+    }
+    // No visible turn anywhere in this session — left unset; forks from here are dropped below.
+  });
+
+  turns.forEach((turn, i) => {
+    if (!visible[i]) return;
     nodes.push({
       id: turn.id,
       type: "turn",
@@ -171,11 +244,11 @@ function buildSessionSubtree(
       data: {
         sessionId: session.id,
         memberUuids: turn.memberUuids,
-        targetNodeUuid: turn.lastNode.uuid,
+        targetNodeUuid: (turn.targetNode ?? turn.lastNode).uuid,
         userText: preview(turn.userNode?.contentText ?? null),
         assistantText: preview(turn.assistantNode?.contentText ?? null),
         timestamp: turn.lastNode.timestamp,
-        isSessionRoot: isRoot && i === 0,
+        isSessionRoot: isRoot && i === firstVisibleIndex,
         isSidechain: session.isSidechain,
         isExpanded: turn.id === expandedTurnId,
         onToggleExpand,
@@ -183,23 +256,25 @@ function buildSessionSubtree(
         onCopyResumeCommand,
       },
     });
-    // Linear-chain guarantee (see plan): within one session, turn i's parent is always turn i-1.
-    if (i > 0) {
-      const prev = turns[i - 1];
-      if (prev) {
+    // Linear-chain guarantee (see plan): connect to the nearest preceding visible turn, if any.
+    for (let j = i - 1; j >= 0; j--) {
+      if (visible[j]) {
         edges.push({
-          id: `e-${prev.id}-${turn.id}`,
-          source: prev.id,
+          id: `e-${turns[j]!.id}-${turn.id}`,
+          source: turns[j]!.id,
           target: turn.id,
           type: "smoothstep",
         });
+        break;
       }
     }
   });
 
   for (const fork of forks) {
-    const sourceTurnId = uuidToTurnId.get(fork.sourceNodeUuid);
-    if (!sourceTurnId) continue; // shouldn't happen: fork.sourceNodeUuid always belongs to this very session's own turns
+    const rawSourceTurnId = uuidToTurnId.get(fork.sourceNodeUuid);
+    if (!rawSourceTurnId) continue; // shouldn't happen: fork.sourceNodeUuid always belongs to this very session's own turns
+    const sourceTurnId = turnIdToVisibleId.get(rawSourceTurnId);
+    if (!sourceTurnId) continue; // this session has no visible turn at all to attach the fork to
 
     if (fork.session.nodes.length === 0) {
       // See PlaceholderNodeData doc comment: this fork's target session exists

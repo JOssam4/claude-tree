@@ -37,7 +37,7 @@ export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
       <Handle type="target" position={Position.Top} />
       {data.isSessionRoot && <div className="turn-node__badge">{data.isSidechain ? 'subagent root' : 'session root'}</div>}
       <div className="turn-node__speaker turn-node__speaker--user">You</div>
-      <div className="turn-node__user">{data.userText ?? <em>(no user text — tool result/continuation)</em>}</div>
+      <div className="turn-node__user">{data.userText ?? <em>(no user message)</em>}</div>
       {data.assistantText && (
         <>
           <div className="turn-node__speaker turn-node__speaker--assistant">Claude</div>
