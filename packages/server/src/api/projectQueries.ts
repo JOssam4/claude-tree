@@ -34,23 +34,57 @@ export function listProjectSummaries(db: DB): ProjectSummaryDTO[] {
 
 /**
  * One row per conversation (root session — same "no branch_edges targets it"
- * definition as rootSessionCount above), across every project, newest-indexed
- * first. Backs the sidebar's conversation list (GET /api/conversations).
+ * definition as rootSessionCount above), across every project, ordered by the
+ * most recent activity anywhere in that conversation's tree (the root session
+ * itself plus every branch/subagent session forked from it, recursively).
+ * Backs the sidebar's conversation list (GET /api/conversations).
+ *
+ * "Most recent activity" is the MAX(nodes.timestamp) across every node in
+ * every session in the tree — the real message timestamp from Claude Code's
+ * own JSONL — not sessions.last_indexed_at, which is only the wall-clock time
+ * our own indexer last happened to touch that row (e.g. a fresh backfill
+ * stamps every session with "now" in directory-scan order, which has no
+ * relation to when the underlying conversation actually last had a message).
+ * Falls back to the root's own created_at only for the (edge-case) root with
+ * zero nodes anywhere in its tree yet, e.g. mid-backfill.
+ *
+ * The recursive walk uses plain UNION (not UNION ALL) so a synthetic
+ * branch_edges cycle (see treeBuilder.ts's cycle guard) can't loop forever:
+ * UNION dedupes (root_id, session_id) pairs, so the row set is bounded by
+ * sessions.length and the recursion reaches a fixpoint.
  */
 export function listConversationSummaries(db: DB): ConversationSummaryDTO[] {
   return db
     .prepare(
-      `SELECT
+      `WITH RECURSIVE tree(root_id, session_id) AS (
+         SELECT s.id, s.id
+         FROM sessions s
+         WHERE NOT EXISTS (SELECT 1 FROM branch_edges be WHERE be.target_session_id = s.id)
+         UNION
+         SELECT t.root_id, be.target_session_id
+         FROM tree t
+         JOIN nodes n ON n.session_id = t.session_id
+         JOIN branch_edges be ON be.source_node_uuid = n.uuid
+       ),
+       tree_activity AS (
+         SELECT t.root_id as rootId, MAX(n2.timestamp) as lastActivityAt
+         FROM tree t
+         LEFT JOIN nodes n2 ON n2.session_id = t.session_id
+         GROUP BY t.root_id
+       )
+       SELECT
          s.id as sessionId,
          p.slug as projectSlug,
          p.cwd as projectCwd,
          s.ai_title as aiTitle,
          s.created_at as createdAt,
-         s.last_indexed_at as lastIndexedAt
+         s.last_indexed_at as lastIndexedAt,
+         COALESCE(ta.lastActivityAt, s.created_at) as lastActivityAt
        FROM sessions s
        JOIN projects p ON p.id = s.project_id
+       JOIN tree_activity ta ON ta.rootId = s.id
        WHERE NOT EXISTS (SELECT 1 FROM branch_edges be WHERE be.target_session_id = s.id)
-       ORDER BY s.last_indexed_at DESC`,
+       ORDER BY COALESCE(ta.lastActivityAt, s.created_at) DESC`,
     )
     .all() as ConversationSummaryDTO[];
 }

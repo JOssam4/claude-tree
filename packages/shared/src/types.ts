@@ -86,6 +86,14 @@ export interface ConversationSummaryDTO extends Pick<SessionDTO, "aiTitle" | "cr
   sessionId: string;
   projectSlug: string;
   projectCwd: string;
+  /**
+   * Most recent node (message) timestamp across this conversation's whole
+   * tree (the root session plus every branch/subagent session forked from
+   * it, recursively) — the real message time from Claude Code's own JSONL,
+   * not this app's indexing time. What the conversation list is sorted by,
+   * so a still-active old conversation surfaces above a newer but idle one.
+   */
+  lastActivityAt: string;
 }
 
 /**
