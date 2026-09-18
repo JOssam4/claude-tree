@@ -1,6 +1,6 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
-import type { TurnNode as TurnNodeType } from "../tree/turnGraph";
+import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
+import type { TurnNode as TurnNodeType } from '../tree/turnGraph';
 
 /**
  * Custom xyflow node rendering one user+assistant turn. `data.memberUuids`
@@ -13,12 +13,12 @@ export function TurnNode({ data }: NodeProps<TurnNodeType>) {
 
   return (
     <div
-      className={`turn-node${data.isSessionRoot ? " turn-node--root" : ""}${data.isSidechain ? " turn-node--sidechain" : ""}`}
+      className={`turn-node${data.isSessionRoot ? ' turn-node--root' : ''}${data.isSidechain ? ' turn-node--sidechain' : ''}`}
       data-target-node-uuid={data.targetNodeUuid}
-      data-member-uuids={data.memberUuids.join(",")}
+      data-member-uuids={data.memberUuids.join(',')}
     >
       <Handle type="target" position={Position.Top} />
-      {data.isSessionRoot && <div className="turn-node__badge">{data.isSidechain ? "subagent root" : "session root"}</div>}
+      {data.isSessionRoot && <div className="turn-node__badge">{data.isSidechain ? 'subagent root' : 'session root'}</div>}
       <div className="turn-node__user">{data.userText ?? <em>(no user text — tool result/continuation)</em>}</div>
       {data.assistantText && <div className="turn-node__assistant">{data.assistantText}</div>}
       <div className="turn-node__actions">
@@ -44,7 +44,7 @@ export function TurnNode({ data }: NodeProps<TurnNodeType>) {
           }}
           title="Branch from here and copy a ready-to-run `claude --resume` command to paste into your own terminal"
         >
-          {copied ? "Copied!" : "⧉ copy resume command"}
+          {copied ? 'Copied!' : '⧉ copy resume command'}
         </button>
       </div>
       <Handle type="source" position={Position.Bottom} />

@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { BranchResponseDTO, ProjectSummaryDTO, ProjectTreeDTO } from "@claude-tree/shared";
-import { branchFromNode, getProjects, getProjectTree } from "./api/client";
-import { useTreeUpdates } from "./api/useTreeUpdates";
-import { ProjectList } from "./components/ProjectList";
-import { TerminalPanel } from "./components/TerminalPanel";
-import { TreeCanvas } from "./components/TreeCanvas";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { BranchResponseDTO, ProjectSummaryDTO, ProjectTreeDTO } from '@claude-tree/shared';
+import { branchFromNode, getProjects, getProjectTree } from './api/client';
+import { useTreeUpdates } from './api/useTreeUpdates';
+import { ProjectList } from './components/ProjectList';
+import { TerminalPanel } from './components/TerminalPanel';
+import { TreeCanvas } from './components/TreeCanvas';
 
 export function App() {
   const [projects, setProjects] = useState<ProjectSummaryDTO[]>([]);
@@ -12,17 +12,17 @@ export function App() {
   const [tree, setTree] = useState<ProjectTreeDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Milestone 5: the currently-open branch terminal's branch result, if any (also
-  // carries Milestone 8's resumeCommand for the panel's own "copy command" button).
-  // Serves both "resume from here" and "start a new conversation from here" — same
+  // carries Milestone 8's resumeCommand for the panel's own 'copy command' button).
+  // Serves both 'resume from here' and 'start a new conversation from here' — same
   // mechanism, just triggered from a node's branch button, per the plan.
   const [terminalBranch, setTerminalBranch] = useState<BranchResponseDTO | null>(null);
 
   // Milestone 8: caches one branch call per source node uuid for this session's
-  // lifetime, so clicking both "⑂ branch" and "⧉ copy resume command" for the same
+  // lifetime, so clicking both '⑂ branch' and '⧉ copy resume command' for the same
   // node forks only ONE new session file, not two. Caches the in-flight PROMISE
   // itself (not just the resolved result) and stores it synchronously before any
   // await — otherwise two calls issued back-to-back (e.g. a rapid double-click, or
-  // clicking "branch" then immediately "copy resume command") would both miss an
+  // clicking 'branch' then immediately 'copy resume command') would both miss an
   // empty cache and both hit the API before either populated it, forking two
   // session files for one logical click. A failed call evicts itself so a later
   // click can retry instead of being stuck replaying the same rejection.

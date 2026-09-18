@@ -1,4 +1,4 @@
-import type { ProjectSummaryDTO } from "@claude-tree/shared";
+import type { ProjectSummaryDTO } from '@claude-tree/shared';
 
 interface ProjectListProps {
   projects: ProjectSummaryDTO[];
@@ -21,8 +21,8 @@ export function ProjectList({ projects, selectedSlug, onSelect }: ProjectListPro
             >
               <div className="project-list__cwd">{p.cwd}</div>
               <div className="project-list__meta">
-                {p.sessionCount} session{p.sessionCount === 1 ? "" : "s"} &middot; {p.rootSessionCount} root
-                {p.rootSessionCount === 1 ? "" : "s"}
+                {p.sessionCount} session{p.sessionCount === 1 ? '' : 's'} &middot; {p.rootSessionCount} root
+                {p.rootSessionCount === 1 ? '' : 's'}
               </div>
             </button>
           </li>

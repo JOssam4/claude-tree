@@ -1,5 +1,5 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
-import type { PlaceholderNode as PlaceholderNodeType } from "../tree/turnGraph";
+import { Handle, Position, type NodeProps } from '@xyflow/react';
+import type { PlaceholderNode as PlaceholderNodeType } from '../tree/turnGraph';
 
 /**
  * Milestone 6: rendered in place of a real TurnNode for a fork whose target
@@ -14,7 +14,7 @@ export function PlaceholderNode({ data }: NodeProps<PlaceholderNodeType>) {
     <div className="turn-node turn-node--placeholder" data-session-id={data.sessionId}>
       <Handle type="target" position={Position.Top} />
       <div className="turn-node__placeholder-text">
-        ◌ new {data.edgeType === "subagent" ? "subagent" : "branch"} — waiting for first message
+        ◌ new {data.edgeType === 'subagent' ? 'subagent' : 'branch'} — waiting for first message
       </div>
       <Handle type="source" position={Position.Bottom} />
     </div>
