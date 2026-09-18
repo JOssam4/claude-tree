@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { ProjectTreeDTO } from '@claude-tree/shared';
@@ -21,9 +21,15 @@ interface TreeCanvasProps {
 
 /** Renders one project's forest: a disconnected xyflow component per root session, dagre-laid-out. */
 export function TreeCanvas({ tree, onBranch, onCopyResumeCommand }: TreeCanvasProps) {
+  // At most one turn expanded at a time — clicking an already-expanded card collapses it back down.
+  const [expandedTurnId, setExpandedTurnId] = useState<string | null>(null);
+  const onToggleExpand = useCallback((turnId: string) => {
+    setExpandedTurnId((current) => (current === turnId ? null : turnId));
+  }, []);
+
   const { nodes, edges } = useMemo(
-    () => buildForestGraph(tree, onBranch, onCopyResumeCommand),
-    [tree, onBranch, onCopyResumeCommand],
+    () => buildForestGraph(tree, onBranch, onCopyResumeCommand, expandedTurnId, onToggleExpand),
+    [tree, onBranch, onCopyResumeCommand, expandedTurnId, onToggleExpand],
   );
 
   if (nodes.length === 0) {

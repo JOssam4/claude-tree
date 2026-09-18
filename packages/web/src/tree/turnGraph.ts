@@ -25,6 +25,10 @@ export interface TurnNodeData extends Record<string, unknown> {
   timestamp: string;
   isSessionRoot: boolean;
   isSidechain: boolean;
+  /** True for the single turn currently expanded (click-to-expand), if any — see `EXPANDED_WIDTH`/`EXPANDED_HEIGHT`. */
+  isExpanded: boolean;
+  /** Invoked with this turn's own id (the xyflow node id) when its card is clicked, to toggle expansion. */
+  onToggleExpand: (turnId: string) => void;
   /** Milestone 5: invoked with `targetNodeUuid` when this turn's "⑂ branch" button is clicked. */
   onBranch: (targetNodeUuid: string) => void;
   /**
@@ -64,17 +68,42 @@ export type ForkEdgeData = Record<string, never>;
 export type TurnEdge = Edge<ForkEdgeData>;
 
 const NODE_WIDTH = 260;
-const NODE_HEIGHT = 96;
-const RANK_SEP = 90;
-const NODE_SEP = 32;
+/**
+ * Must match the `.turn-node` `max-height` in index.css. Dagre spaces boxes
+ * assuming every node is exactly this tall, so if the real rendered card
+ * could ever exceed it, boxes start overlapping (they did — see the CSS
+ * comment on `.turn-node`'s per-block line-clamp truncation, which is what
+ * keeps the real height from ever growing past this budget).
+ */
+const NODE_HEIGHT = 210;
+const RANK_SEP = 110;
+const NODE_SEP = 40;
 const ROOT_GAP = 80;
 
-/** Truncate long message text for compact box display. */
+/**
+ * Click-to-expand size, for the (at most one) turn the user has clicked open.
+ * Must match `.turn-node--expanded`'s `max-height`/`width` in index.css —
+ * same lockstep contract as NODE_HEIGHT above, so dagre always reserves
+ * exactly as much room as the expanded card can actually grow to, and it
+ * never overlaps a neighbor.
+ */
+const EXPANDED_WIDTH = 420;
+const EXPANDED_HEIGHT = 480;
+
+/** Truncate pathologically long message text (collapsed-view visual truncation is CSS line-clamp; this is just a sanity bound on DOM size). */
 function preview(text: string | null): string | null {
   if (!text) return null;
   const trimmed = text.trim();
-  if (trimmed.length <= 160) return trimmed;
-  return `${trimmed.slice(0, 160)}…`;
+  if (trimmed.length <= 20000) return trimmed;
+  return `${trimmed.slice(0, 20000)}…`;
+}
+
+/** The {width, height} dagre should reserve for a node — bigger for the single expanded turn, if any. */
+function nodeDimensions(node: TreeFlowNode, expandedTurnId: string | null): { width: number; height: number } {
+  if (node.type === "turn" && node.id === expandedTurnId) {
+    return { width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT };
+  }
+  return { width: NODE_WIDTH, height: NODE_HEIGHT };
 }
 
 interface Turn {
@@ -118,6 +147,8 @@ interface BuildResult {
 function buildSessionSubtree(
   tree: SessionTreeNodeDTO,
   isRoot: boolean,
+  expandedTurnId: string | null,
+  onToggleExpand: (turnId: string) => void,
   onBranch: (targetNodeUuid: string) => void,
   onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>,
 ): BuildResult {
@@ -146,6 +177,8 @@ function buildSessionSubtree(
         timestamp: turn.lastNode.timestamp,
         isSessionRoot: isRoot && i === 0,
         isSidechain: session.isSidechain,
+        isExpanded: turn.id === expandedTurnId,
+        onToggleExpand,
         onBranch,
         onCopyResumeCommand,
       },
@@ -193,7 +226,7 @@ function buildSessionSubtree(
       continue;
     }
 
-    const child = buildSessionSubtree(fork.session, true, onBranch, onCopyResumeCommand);
+    const child = buildSessionSubtree(fork.session, true, expandedTurnId, onToggleExpand, onBranch, onCopyResumeCommand);
     nodes.push(...child.nodes);
     edges.push(...child.edges);
     const childRootId = child.nodes[0]?.id;
@@ -214,16 +247,17 @@ function buildSessionSubtree(
 }
 
 /** Runs dagre top-to-bottom layout over one connected component, returning nodes with computed positions. */
-function layoutComponent(nodes: TreeFlowNode[], edges: TurnEdge[]): TreeFlowNode[] {
+function layoutComponent(nodes: TreeFlowNode[], edges: TurnEdge[], expandedTurnId: string | null): TreeFlowNode[] {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "TB", nodesep: NODE_SEP, ranksep: RANK_SEP });
   g.setDefaultEdgeLabel(() => ({}));
-  for (const n of nodes) g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  for (const n of nodes) g.setNode(n.id, nodeDimensions(n, expandedTurnId));
   for (const e of edges) g.setEdge(e.source, e.target);
   dagre.layout(g);
   return nodes.map((n) => {
     const pos = g.node(n.id);
-    return { ...n, position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 } };
+    const { width, height } = nodeDimensions(n, expandedTurnId);
+    return { ...n, position: { x: pos.x - width / 2, y: pos.y - height / 2 } };
   });
 }
 
@@ -238,17 +272,20 @@ export function buildForestGraph(
   // Optional + defaulted so existing callers/tests that only exercise branch
   // wiring don't need to change (Milestone 8 addition).
   onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null> = () => Promise.resolve(null),
+  // Optional + defaulted for the same reason (click-to-expand addition): no turn expanded, toggling a no-op.
+  expandedTurnId: string | null = null,
+  onToggleExpand: (turnId: string) => void = () => {},
 ): BuildResult {
   const allNodes: TreeFlowNode[] = [];
   const allEdges: TurnEdge[] = [];
   let xOffset = 0;
 
   for (const root of tree.roots) {
-    const { nodes, edges } = buildSessionSubtree(root, true, onBranch, onCopyResumeCommand);
+    const { nodes, edges } = buildSessionSubtree(root, true, expandedTurnId, onToggleExpand, onBranch, onCopyResumeCommand);
     if (nodes.length === 0) continue;
-    const laidOut = layoutComponent(nodes, edges);
+    const laidOut = layoutComponent(nodes, edges, expandedTurnId);
     const minX = Math.min(...laidOut.map((n) => n.position.x));
-    const maxX = Math.max(...laidOut.map((n) => n.position.x + NODE_WIDTH));
+    const maxX = Math.max(...laidOut.map((n) => n.position.x + nodeDimensions(n, expandedTurnId).width));
     const shifted = laidOut.map((n) => ({
       ...n,
       position: { x: n.position.x - minX + xOffset, y: n.position.y },

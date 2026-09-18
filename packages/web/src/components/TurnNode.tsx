@@ -8,19 +8,42 @@ import type { TurnNode as TurnNodeType } from '../tree/turnGraph';
  * has something to hook a click handler / context menu onto without needing
  * to touch this component again.
  */
-export function TurnNode({ data }: NodeProps<TurnNodeType>) {
+export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
   const { copied, copy } = useCopyToClipboard();
 
   return (
     <div
-      className={`turn-node${data.isSessionRoot ? ' turn-node--root' : ''}${data.isSidechain ? ' turn-node--sidechain' : ''}`}
+      className={`turn-node${data.isSessionRoot ? ' turn-node--root' : ''}${data.isSidechain ? ' turn-node--sidechain' : ''}${
+        // 'nowheel' is @xyflow/react's built-in escape hatch (default noWheelClassName): scrolling
+        // over an element with this class scrolls the element's own overflow instead of the usual
+        // zoom-on-scroll behavior over the canvas. Only needed once expanded — the collapsed card
+        // has no scrollable overflow, and we still want scroll-to-zoom to work everywhere else.
+        data.isExpanded ? ' turn-node--expanded nowheel' : ''
+      }`}
       data-target-node-uuid={data.targetNodeUuid}
       data-member-uuids={data.memberUuids.join(',')}
+      role="button"
+      tabIndex={0}
+      aria-expanded={data.isExpanded}
+      title={data.isExpanded ? 'Click to collapse' : 'Click to expand and read the full turn'}
+      onClick={() => data.onToggleExpand(id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          data.onToggleExpand(id);
+        }
+      }}
     >
       <Handle type="target" position={Position.Top} />
       {data.isSessionRoot && <div className="turn-node__badge">{data.isSidechain ? 'subagent root' : 'session root'}</div>}
+      <div className="turn-node__speaker turn-node__speaker--user">You</div>
       <div className="turn-node__user">{data.userText ?? <em>(no user text — tool result/continuation)</em>}</div>
-      {data.assistantText && <div className="turn-node__assistant">{data.assistantText}</div>}
+      {data.assistantText && (
+        <>
+          <div className="turn-node__speaker turn-node__speaker--assistant">Claude</div>
+          <div className="turn-node__assistant">{data.assistantText}</div>
+        </>
+      )}
       <div className="turn-node__actions">
         <button
           className="turn-node__branch-btn"

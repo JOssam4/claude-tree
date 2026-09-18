@@ -103,13 +103,21 @@ body {
 }
 
 .turn-node {
+  box-sizing: border-box;
   width: 260px;
+  /* Hard cap, kept in lockstep with NODE_HEIGHT in turnGraph.ts: dagre spaces
+     boxes assuming this exact height, so if real content could ever grow
+     past it, boxes would start overlapping again regardless of the
+     per-block truncation below. */
+  max-height: 210px;
+  overflow: hidden;
   border: 1px solid #ccc;
   border-radius: 8px;
   background: #fff;
   padding: 8px 10px;
   font-size: 12px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
 }
 .turn-node--root {
   border-color: #5b6ee8;
@@ -118,6 +126,18 @@ body {
 .turn-node--sidechain {
   background: #fbf7ff;
 }
+.turn-node--expanded {
+  /* Kept in lockstep with EXPANDED_WIDTH/EXPANDED_HEIGHT in turnGraph.ts —
+     same contract as the collapsed size above. Scrolls (rather than clips)
+     on the rare turn whose full text still doesn't fit, so nothing the user
+     asked to read is ever silently hidden. */
+  width: 420px;
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
 .turn-node__badge {
   font-size: 10px;
   text-transform: uppercase;
@@ -125,18 +145,44 @@ body {
   color: #5b6ee8;
   margin-bottom: 4px;
 }
+.turn-node__speaker {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.turn-node__speaker--user {
+  color: #5b6ee8;
+}
+.turn-node__speaker--assistant {
+  color: #c2760c;
+}
+.turn-node__user,
+.turn-node__assistant {
+  padding-left: 6px;
+  white-space: pre-wrap;
+  /* Truncate to a fixed number of lines (with an ellipsis) so a long prompt
+     or reply can never push the card past the height dagre laid it out for. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .turn-node__user {
   font-weight: 600;
-  margin-bottom: 4px;
-  white-space: pre-wrap;
-  max-height: 4.5em;
-  overflow: hidden;
+  margin-bottom: 6px;
+  border-left: 2px solid #5b6ee8;
 }
 .turn-node__assistant {
   color: #444;
-  white-space: pre-wrap;
-  max-height: 4.5em;
-  overflow: hidden;
+  border-left: 2px solid #e8b25b;
+}
+.turn-node--expanded .turn-node__user,
+.turn-node--expanded .turn-node__assistant {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 .turn-node__actions {
   display: flex;
