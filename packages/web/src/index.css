@@ -190,7 +190,6 @@ body {
   gap: 4px;
   margin-top: 6px;
 }
-.turn-node__branch-btn,
 .turn-node__copy-btn {
   font-size: 10px;
   padding: 2px 6px;
@@ -200,7 +199,6 @@ body {
   color: #5b6ee8;
   cursor: pointer;
 }
-.turn-node__branch-btn:hover,
 .turn-node__copy-btn:hover {
   background: #dde3ff;
 }

@@ -13,14 +13,12 @@ const nodeTypes: NodeTypes = {
 
 interface TreeCanvasProps {
   tree: ProjectTreeDTO;
-  /** Milestone 5: called with a turn's targetNodeUuid when its "⑂ branch" button is clicked. */
-  onBranch: (targetNodeUuid: string) => void;
   /** Milestone 8: called with a turn's targetNodeUuid when its "⧉ copy resume command" button is clicked. */
   onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>;
 }
 
 /** Renders one project's forest: a disconnected xyflow component per root session, dagre-laid-out. */
-export function TreeCanvas({ tree, onBranch, onCopyResumeCommand }: TreeCanvasProps) {
+export function TreeCanvas({ tree, onCopyResumeCommand }: TreeCanvasProps) {
   // At most one turn expanded at a time — clicking an already-expanded card collapses it back down.
   const [expandedTurnId, setExpandedTurnId] = useState<string | null>(null);
   const onToggleExpand = useCallback((turnId: string) => {
@@ -28,8 +26,8 @@ export function TreeCanvas({ tree, onBranch, onCopyResumeCommand }: TreeCanvasPr
   }, []);
 
   const { nodes, edges } = useMemo(
-    () => buildForestGraph(tree, onBranch, onCopyResumeCommand, expandedTurnId, onToggleExpand),
-    [tree, onBranch, onCopyResumeCommand, expandedTurnId, onToggleExpand],
+    () => buildForestGraph(tree, onCopyResumeCommand, expandedTurnId, onToggleExpand),
+    [tree, onCopyResumeCommand, expandedTurnId, onToggleExpand],
   );
 
   if (nodes.length === 0) {

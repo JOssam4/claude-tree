@@ -23,9 +23,9 @@ import type { NodeDTO, ProjectTreeDTO, SessionTreeNodeDTO } from "@claude-tree/s
 
 export interface TurnNodeData extends Record<string, unknown> {
   sessionId: string;
-  /** All underlying node uuids folded into this box — plumbing for Milestone 5's branch-target picker. */
+  /** All underlying node uuids folded into this box — plumbing for a future branch-target picker (see onBranch's removal note below). */
   memberUuids: string[];
-  /** The specific node Milestone 5's branch action should target (latest node in this turn). */
+  /** The specific node a resume/branch action should target (latest node in this turn). */
   targetNodeUuid: string;
   userText: string | null;
   assistantText: string | null;
@@ -36,12 +36,22 @@ export interface TurnNodeData extends Record<string, unknown> {
   isExpanded: boolean;
   /** Invoked with this turn's own id (the xyflow node id) when its card is clicked, to toggle expansion. */
   onToggleExpand: (turnId: string) => void;
-  /** Milestone 5: invoked with `targetNodeUuid` when this turn's "⑂ branch" button is clicked. */
-  onBranch: (targetNodeUuid: string) => void;
   /**
    * Milestone 8: invoked with `targetNodeUuid` when this turn's "⧉ copy resume
    * command" button is clicked; resolves to the ready-to-paste command, or
    * null if the branch call failed (error already surfaced elsewhere by the caller).
+   *
+   * There used to be a sibling `onBranch: (targetNodeUuid: string) => void`
+   * field here too, wired to a "⑂ branch" button that opened the forked
+   * session in an embedded terminal (App.tsx's old `handleBranch`/
+   * `terminalBranch` state + `<TerminalPanel>`). It's removed for now — copy
+   * resume command covers the need and shares the same underlying
+   * `POST /api/nodes/:uuid/branch` call via App.tsx's `getOrCreateBranch`
+   * cache. To bring it back: re-add this field, thread it through
+   * `buildSessionSubtree`/`buildForestGraph` alongside `onCopyResumeCommand`
+   * below, render the button again in TurnNode.tsx, and in App.tsx restore
+   * `terminalBranch` state + a `handleBranch` that calls `getOrCreateBranch`
+   * and renders `<TerminalPanel>` (still present, untouched) on success.
    */
   onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>;
 }
@@ -189,7 +199,6 @@ function buildSessionSubtree(
   isRoot: boolean,
   expandedTurnId: string | null,
   onToggleExpand: (turnId: string) => void,
-  onBranch: (targetNodeUuid: string) => void,
   onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>,
 ): BuildResult {
   const { session, nodes: rawNodes, forks } = tree;
@@ -252,7 +261,6 @@ function buildSessionSubtree(
         isSidechain: session.isSidechain,
         isExpanded: turn.id === expandedTurnId,
         onToggleExpand,
-        onBranch,
         onCopyResumeCommand,
       },
     });
@@ -301,7 +309,7 @@ function buildSessionSubtree(
       continue;
     }
 
-    const child = buildSessionSubtree(fork.session, true, expandedTurnId, onToggleExpand, onBranch, onCopyResumeCommand);
+    const child = buildSessionSubtree(fork.session, true, expandedTurnId, onToggleExpand, onCopyResumeCommand);
     nodes.push(...child.nodes);
     edges.push(...child.edges);
     const childRootId = child.nodes[0]?.id;
@@ -343,9 +351,7 @@ function layoutComponent(nodes: TreeFlowNode[], edges: TurnEdge[], expandedTurnI
  */
 export function buildForestGraph(
   tree: ProjectTreeDTO,
-  onBranch: (targetNodeUuid: string) => void,
-  // Optional + defaulted so existing callers/tests that only exercise branch
-  // wiring don't need to change (Milestone 8 addition).
+  // Optional + defaulted so existing callers/tests don't need to change (Milestone 8 addition).
   onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null> = () => Promise.resolve(null),
   // Optional + defaulted for the same reason (click-to-expand addition): no turn expanded, toggling a no-op.
   expandedTurnId: string | null = null,
@@ -356,7 +362,7 @@ export function buildForestGraph(
   let xOffset = 0;
 
   for (const root of tree.roots) {
-    const { nodes, edges } = buildSessionSubtree(root, true, expandedTurnId, onToggleExpand, onBranch, onCopyResumeCommand);
+    const { nodes, edges } = buildSessionSubtree(root, true, expandedTurnId, onToggleExpand, onCopyResumeCommand);
     if (nodes.length === 0) continue;
     const laidOut = layoutComponent(nodes, edges, expandedTurnId);
     const minX = Math.min(...laidOut.map((n) => n.position.x));

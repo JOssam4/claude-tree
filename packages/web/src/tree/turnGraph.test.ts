@@ -65,8 +65,6 @@ function isPlaceholderNode(n: { type: string }): n is PlaceholderNode {
   return n.type === "placeholder";
 }
 
-const noopBranch = () => {};
-
 describe("buildForestGraph / turn grouping", () => {
   it("pairs a user+assistant turn into a single turn box", () => {
     const sessionId = "s1";
@@ -79,7 +77,7 @@ describe("buildForestGraph / turn grouping", () => {
       ]),
     ]);
 
-    const { nodes, edges } = buildForestGraph(tree, noopBranch);
+    const { nodes, edges } = buildForestGraph(tree);
     const turnNodes = nodes.filter(isTurnNode);
     expect(turnNodes).toHaveLength(1);
     expect(turnNodes[0]?.data.memberUuids).toEqual([u1, a1]);
@@ -101,7 +99,7 @@ describe("buildForestGraph / turn grouping", () => {
       ]),
     ]);
 
-    const { nodes, edges } = buildForestGraph(tree, noopBranch);
+    const { nodes, edges } = buildForestGraph(tree);
     const turnNodes = nodes.filter(isTurnNode);
     expect(turnNodes).toHaveLength(2);
     expect(turnNodes[1]?.data.userText).toBe("follow up");
@@ -111,7 +109,7 @@ describe("buildForestGraph / turn grouping", () => {
 
   it("produces no nodes/edges for a zero-node root session, without crashing", () => {
     const tree = makeProjectTree([makeSessionTree(makeSession("empty-session"), [])]);
-    const { nodes, edges } = buildForestGraph(tree, noopBranch);
+    const { nodes, edges } = buildForestGraph(tree);
     expect(nodes).toEqual([]);
     expect(edges).toEqual([]);
   });
@@ -131,7 +129,7 @@ describe("buildForestGraph / turn grouping", () => {
       ]),
     ]);
 
-    const { nodes, edges } = buildForestGraph(tree, noopBranch);
+    const { nodes, edges } = buildForestGraph(tree);
     const turnNodes = nodes.filter(isTurnNode);
     expect(turnNodes).toHaveLength(1);
     expect(turnNodes[0]?.data.memberUuids).toEqual([u1, toolCall, toolResult, a1]);
@@ -161,7 +159,7 @@ describe("buildForestGraph / turn grouping", () => {
       ]),
     ]);
 
-    const { nodes, edges } = buildForestGraph(tree, noopBranch);
+    const { nodes, edges } = buildForestGraph(tree);
     const turnNodes = nodes.filter(isTurnNode);
     expect(turnNodes).toHaveLength(1);
     expect(turnNodes[0]?.data.userText).toBe("/simplify");
@@ -183,7 +181,7 @@ describe("buildForestGraph / turn grouping", () => {
       ]),
     ]);
 
-    const { nodes } = buildForestGraph(tree, noopBranch);
+    const { nodes } = buildForestGraph(tree);
     const turnNodes = nodes.filter(isTurnNode);
     expect(turnNodes).toHaveLength(1);
     // targetNodeUuid should resolve to a1 (last real message), not trailingToolCall.
@@ -219,7 +217,7 @@ describe("buildForestGraph / fork attachment", () => {
     };
     const tree = makeProjectTree([makeSessionTree(makeSession(sessionId), nodes, [fork])]);
 
-    const { edges } = buildForestGraph(tree, noopBranch);
+    const { edges } = buildForestGraph(tree);
     const forkEdge = edges.find((e) => e.id.startsWith("fork-"));
     expect(forkEdge).toBeDefined();
     expect(forkEdge?.source).toBe(`${sessionId}#1`); // the middle turn's id, not #0 or #2
@@ -239,7 +237,7 @@ describe("buildForestGraph / fork attachment", () => {
     };
     const tree = makeProjectTree([makeSessionTree(makeSession(sessionId), nodes, [fork])]);
 
-    const { edges } = buildForestGraph(tree, noopBranch);
+    const { edges } = buildForestGraph(tree);
     const forkEdge = edges.find((e) => e.id.startsWith("fork-"));
     expect(forkEdge?.className).toBe("edge-subagent");
     expect(forkEdge?.label).toBe("subagent");
@@ -257,7 +255,7 @@ describe("buildForestGraph / fork attachment", () => {
     };
     const tree = makeProjectTree([makeSessionTree(makeSession(sessionId), nodes, [fork])]);
 
-    const { nodes: outNodes, edges } = buildForestGraph(tree, noopBranch);
+    const { nodes: outNodes, edges } = buildForestGraph(tree);
     const placeholder = outNodes.filter(isPlaceholderNode);
     expect(placeholder).toHaveLength(1);
     expect(placeholder[0]?.id).toBe(`placeholder-${forkSessionId}`);
@@ -298,7 +296,7 @@ describe("buildForestGraph / fork attachment", () => {
       [{ edgeType: "branch", sourceNodeUuid: aA, session: treeB }],
     );
 
-    const { nodes, edges } = buildForestGraph(makeProjectTree([treeA]), noopBranch);
+    const { nodes, edges } = buildForestGraph(makeProjectTree([treeA]));
     const turnNodes = nodes.filter(isTurnNode);
     expect(turnNodes.map((n) => n.data.sessionId).sort()).toEqual([sessionA, sessionB, sessionC].sort());
 
@@ -334,7 +332,7 @@ describe("buildForestGraph / click-to-expand", () => {
     const tree = buildLinearSession(sessionId);
     const expandedTurnId = `${sessionId}#0`;
 
-    const { nodes } = buildForestGraph(tree, noopBranch, undefined, expandedTurnId);
+    const { nodes } = buildForestGraph(tree, undefined, expandedTurnId);
     const turnNodes = nodes.filter(isTurnNode);
     expect(turnNodes.find((n) => n.id === expandedTurnId)?.data.isExpanded).toBe(true);
     expect(turnNodes.find((n) => n.id !== expandedTurnId)?.data.isExpanded).toBe(false);
@@ -345,11 +343,11 @@ describe("buildForestGraph / click-to-expand", () => {
     const tree = buildLinearSession(sessionId);
     const expandedTurnId = `${sessionId}#0`;
 
-    const collapsed = buildForestGraph(tree, noopBranch);
+    const collapsed = buildForestGraph(tree);
     const collapsedTurns = collapsed.nodes.filter(isTurnNode);
     const collapsedGap = (collapsedTurns[1]?.position.y ?? 0) - (collapsedTurns[0]?.position.y ?? 0);
 
-    const expanded = buildForestGraph(tree, noopBranch, undefined, expandedTurnId);
+    const expanded = buildForestGraph(tree, undefined, expandedTurnId);
     const expandedTurns = expanded.nodes.filter(isTurnNode);
     const expandedGap = (expandedTurns[1]?.position.y ?? 0) - (expandedTurns[0]?.position.y ?? 0);
 
@@ -380,7 +378,7 @@ describe("buildForestGraph / dagre layout", () => {
       makeNode({ uuid: yu3, parentUuid: yu2, type: "user", seq: 2, sessionId: sessionY, text: "y msg 3" }),
     ]);
 
-    const { nodes } = buildForestGraph(makeProjectTree([treeX, treeY]), noopBranch);
+    const { nodes } = buildForestGraph(makeProjectTree([treeX, treeY]));
     const groupX = nodes.filter(isTurnNode).filter((n) => n.data.sessionId === sessionX);
     const groupY = nodes.filter(isTurnNode).filter((n) => n.data.sessionId === sessionY);
     expect(groupX.length).toBeGreaterThan(0);

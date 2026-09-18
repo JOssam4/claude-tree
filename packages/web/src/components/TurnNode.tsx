@@ -45,16 +45,13 @@ export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
         </>
       )}
       <div className="turn-node__actions">
-        <button
-          className="turn-node__branch-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            data.onBranch(data.targetNodeUuid);
-          }}
-          title="Branch from here: forks this conversation's history into a new, independently-resumable session, and opens it in an embedded terminal"
-        >
-          ⑂ branch
-        </button>
+        {/*
+          There used to be a sibling "⑂ branch" button here that forked the
+          session and opened it in an embedded terminal (App.tsx's old
+          handleBranch/terminalBranch + <TerminalPanel>). Removed for now —
+          copy resume command covers the need. See TurnNodeData.onCopyResumeCommand's
+          doc comment in turnGraph.ts for exactly how to restore it.
+        */}
         <button
           className="turn-node__copy-btn"
           onClick={(e) => {

@@ -3,7 +3,7 @@
 A conversation tree manager for [Claude Code](https://claude.com/claude-code). It indexes your existing Claude Code conversations (stored locally under `~/.claude/projects/`) into a browsable, branching tree, and lets you fork a new, independently-resumable session from any past turn — without ever touching the original conversation.
 
 - **Automatic tracking** — every Claude Code conversation becomes a tree; every prompt/response becomes a node. Updates live as you use Claude Code.
-- **Branch from any point** — click a turn and either open a real embedded terminal resuming from exactly that point, or copy a ready-to-run `claude --resume ...` command to paste into your own terminal.
+- **Branch from any point** — click a turn to fork the conversation up to that point into a new session, and copy a ready-to-run `claude --resume ...` command to paste into your own terminal.
 - **Non-destructive** — branching always creates a brand-new session file. The conversation you branched from is never modified, so you can always get back to it.
 
 ## Prerequisites
@@ -35,11 +35,10 @@ For iterating on the backend itself, `npm run dev --workspace packages/server` r
 
 ### Branching
 
-Click a turn in the tree to see its actions:
-- **⑂ branch** — forks the conversation up to that point into a new session and opens a live terminal (right-hand panel) already resumed there.
-- **⧉ copy resume command** — forks the conversation the same way, but instead copies a shell command (`cd '<project dir>' && claude --resume <new-session-id>`) to your clipboard so you can continue in your own terminal.
+Click a turn in the tree to see its action:
+- **⧉ copy resume command** — forks the conversation up to that point into a new session and copies a shell command (`cd '<project dir>' && claude --resume <new-session-id>`) to your clipboard so you can continue in your own terminal.
 
-Both actions for the same turn reuse a single fork — clicking either (or both) doesn't create duplicate session files.
+(There was previously also a "⑂ branch" button that opened a live embedded terminal instead of copying a command; it's removed for now since copy-resume-command covers the need, but the underlying fork/resume machinery it used is untouched — see the doc comments on `TurnNodeData.onCopyResumeCommand` in `packages/web/src/tree/turnGraph.ts` for exactly how to bring it back.)
 
 ## Running tests
 
