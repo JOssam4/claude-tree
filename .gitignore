@@ -4,3 +4,4 @@ dist/
 packages/server/data/
 .dev-screenshots/
 .DS_Store
+/.idea/

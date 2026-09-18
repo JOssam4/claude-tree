@@ -46,23 +46,23 @@ body {
   font-size: 13px;
 }
 
-.project-list h2 {
+.conversation-list h2 {
   font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #666;
   margin: 4px 0 12px;
 }
-.project-list ul {
+.conversation-list ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.project-list__empty {
+.conversation-list__empty {
   color: #888;
   font-size: 13px;
 }
-.project-list__item {
+.conversation-list__item {
   display: block;
   width: 100%;
   text-align: left;
@@ -73,22 +73,24 @@ body {
   background: #fafafa;
   cursor: pointer;
 }
-.project-list__item:hover {
+.conversation-list__item:hover {
   background: #eef2ff;
 }
-.project-list__item--active {
+.conversation-list__item--active {
   border-color: #5b6ee8;
   background: #e8ecff;
 }
-.project-list__cwd {
-  font-size: 12.5px;
-  font-family: ui-monospace, monospace;
-  word-break: break-all;
+.conversation-list__title {
+  font-size: 13px;
+  font-weight: 500;
+  word-break: break-word;
 }
-.project-list__meta {
+.conversation-list__meta {
   font-size: 11px;
+  font-family: ui-monospace, monospace;
   color: #777;
   margin-top: 2px;
+  word-break: break-all;
 }
 
 .tree-canvas {

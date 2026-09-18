@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { chainLine, writeJsonlFile } from "../test/fixtures.js";
+import { aiTitleLine, chainLine, writeJsonlFile } from "../test/fixtures.js";
 import { createFixtureClaudeHome, type FixtureClaudeHome } from "../test/tempHome.js";
 
 // The branch endpoint (POST /api/nodes/:uuid/branch) goes through
@@ -35,6 +35,7 @@ describe("API routes (Fastify .inject, temp fixture DB + fixture projects dir)",
     writeJsonlFile(filePath, [
       chainLine({ uuid: rootUuid, parentUuid: null, type: "user", text: "hello", cwd: "/tmp/api-cwd" }),
       chainLine({ uuid: leafUuid, parentUuid: rootUuid, type: "assistant", text: "hi there" }),
+      aiTitleLine("Say hello"),
     ]);
 
     db = openDb(":memory:");
@@ -82,6 +83,37 @@ describe("API routes (Fastify .inject, temp fixture DB + fixture projects dir)",
     expect(fork.edgeType).toBe("branch");
     expect(fork.sourceNodeUuid).toBe(leafUuid);
     expect(fork.session.session.id).toBe(newSessionId);
+  });
+
+  it("GET /api/conversations lists the fixture's root session with its ai-title", async () => {
+    const res = await apiServer.app.inject({ method: "GET", url: "/api/conversations" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { sessionId: string; projectSlug: string; aiTitle: string | null }[];
+    const conversation = body.find((c) => c.sessionId === sessionId);
+    expect(conversation).toBeDefined();
+    expect(conversation?.projectSlug).toBe(slug);
+    expect(conversation?.aiTitle).toBe("Say hello");
+  });
+
+  it("GET /api/conversations omits a session that is itself a fork target", async () => {
+    const branchRes = await apiServer.app.inject({ method: "POST", url: `/api/nodes/${leafUuid}/branch` });
+    const { newSessionId } = branchRes.json() as { newSessionId: string };
+
+    const res = await apiServer.app.inject({ method: "GET", url: "/api/conversations" });
+    const body = res.json() as { sessionId: string }[];
+    expect(body.some((c) => c.sessionId === newSessionId)).toBe(false);
+  });
+
+  it("GET /api/sessions/:id/tree returns just that one session's tree, and 404 for an unknown id", async () => {
+    const res = await apiServer.app.inject({ method: "GET", url: `/api/sessions/${sessionId}/tree` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { roots: { session: { id: string }; nodes: unknown[] }[] };
+    expect(body.roots).toHaveLength(1);
+    expect(body.roots[0]?.session.id).toBe(sessionId);
+    expect(body.roots[0]?.nodes).toHaveLength(2);
+
+    const missing = await apiServer.app.inject({ method: "GET", url: `/api/sessions/${crypto.randomUUID()}/tree` });
+    expect(missing.statusCode).toBe(404);
   });
 
   it("GET /api/nodes/:uuid returns 200 with ancestry for a real node, and 404 for an unknown one", async () => {

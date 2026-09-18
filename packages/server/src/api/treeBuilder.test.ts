@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type DB } from "../db/client.js";
-import { buildProjectTree } from "./treeBuilder.js";
+import { buildProjectTree, buildSessionTree } from "./treeBuilder.js";
 
 // treeBuilder.ts only ever queries `db` (this app's own SQLite DB, never
 // ~/.claude), so these tests build rows directly via raw SQL against an
@@ -145,5 +145,73 @@ describe("buildProjectTree", () => {
     const cFork = bFork.session.forks[0]!;
     expect(cFork.session.session.id).toBe(sessionC);
     expect(cFork.session.forks).toEqual([]);
+  });
+});
+
+describe("buildSessionTree", () => {
+  let db: DB;
+
+  beforeEach(() => {
+    db = openDb(":memory:");
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("returns null for an unknown session id", () => {
+    expect(buildSessionTree(db, uuid())).toBeNull();
+  });
+
+  it("returns just the one requested session's tree — not its project's other root sessions", () => {
+    const projectId = insertProject(db, "-tmp-single");
+    const sessionOne = uuid();
+    const sessionTwo = uuid();
+    insertSession(db, sessionOne, projectId);
+    insertSession(db, sessionTwo, projectId);
+    insertNode(db, uuid(), sessionOne, null, 0);
+    insertNode(db, uuid(), sessionTwo, null, 0);
+
+    const tree = buildSessionTree(db, sessionOne);
+    expect(tree).not.toBeNull();
+    expect(tree?.roots).toHaveLength(1);
+    expect(tree?.roots[0]?.session.id).toBe(sessionOne);
+    expect(tree?.project.slug).toBe("-tmp-single");
+  });
+
+  it("still nests that session's own forks, recursively", () => {
+    const projectId = insertProject(db, "-tmp-single2");
+    const rootSessionId = uuid();
+    const branchSessionId = uuid();
+    insertSession(db, rootSessionId, projectId);
+    insertSession(db, branchSessionId, projectId);
+    const rootNode = uuid();
+    insertNode(db, rootNode, rootSessionId, null, 0);
+    insertNode(db, uuid(), branchSessionId, null, 0);
+    insertBranchEdge(db, rootNode, branchSessionId, "branch");
+
+    const tree = buildSessionTree(db, rootSessionId);
+    expect(tree?.roots[0]?.forks).toHaveLength(1);
+    expect(tree?.roots[0]?.forks[0]?.session.session.id).toBe(branchSessionId);
+  });
+
+  it("builds the subtree rooted at whatever id is passed, even a fork target, rather than its ancestor's tree", () => {
+    // buildSessionTree builds exactly the subtree rooted at the given id; a
+    // fork target isn't invalid on its own (it's still a real session with a
+    // real node chain), so this documents the deliberate behavior: it's the
+    // conversation list (root sessions only) that decides what's selectable,
+    // not buildSessionTree itself.
+    const projectId = insertProject(db, "-tmp-single3");
+    const rootSessionId = uuid();
+    const branchSessionId = uuid();
+    insertSession(db, rootSessionId, projectId);
+    insertSession(db, branchSessionId, projectId);
+    const rootNode = uuid();
+    insertNode(db, rootNode, rootSessionId, null, 0);
+    insertNode(db, uuid(), branchSessionId, null, 0);
+    insertBranchEdge(db, rootNode, branchSessionId, "branch");
+
+    const tree = buildSessionTree(db, branchSessionId);
+    expect(tree?.roots[0]?.session.id).toBe(branchSessionId);
   });
 });

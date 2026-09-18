@@ -68,16 +68,79 @@ export function getProjectBySlug(db: DB, slug: string): ProjectDTO | undefined {
     .get(slug) as ProjectDTO | undefined;
 }
 
-/**
- * Builds the full nested forest for one project in a handful of bulk queries
- * (no N+1: one query each for sessions, nodes, and branch_edges, all scoped
- * to this project's session ids), then assembles the tree in memory.
- * Returns null if the project slug doesn't exist.
- */
-export function buildProjectTree(db: DB, slug: string, log: LogFn = console.warn): ProjectTreeDTO | null {
-  const project = getProjectBySlug(db, slug);
-  if (!project) return null;
+/** The project a given session belongs to, joined in one query (used by buildSessionTree, which only has a session id to start from). */
+function getProjectForSession(db: DB, sessionId: string): ProjectDTO | undefined {
+  return db
+    .prepare(
+      `SELECT p.id as id, p.slug as slug, p.cwd as cwd,
+              p.first_seen_at as firstSeenAt, p.last_seen_at as lastSeenAt
+       FROM sessions s JOIN projects p ON p.id = s.project_id
+       WHERE s.id = ?`,
+    )
+    .get(sessionId) as ProjectDTO | undefined;
+}
 
+/** Bulk-loaded lookup tables shared by both buildProjectTree and buildSessionTree's recursion. */
+interface TreeContext {
+  sessionsById: Map<string, SessionDTO>;
+  nodesBySession: Map<string, NodeDTO[]>;
+  edgesBySourceNode: Map<string, BranchEdgeDTO[]>;
+}
+
+function groupBy<T, K>(rows: T[], keyOf: (row: T) => K): Map<K, T[]> {
+  const map = new Map<K, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const bucket = map.get(key);
+    if (bucket) bucket.push(row);
+    else map.set(key, [row]);
+  }
+  return map;
+}
+
+function loadSessionRows(db: DB, sessionIds: readonly string[]): SessionRow[] {
+  if (sessionIds.length === 0) return [];
+  return db
+    .prepare(
+      `SELECT id, project_id as projectId, file_path as filePath, is_sidechain as isSidechain,
+              agent_id as agentId, ai_title as aiTitle, created_at as createdAt,
+              last_indexed_at as lastIndexedAt, last_byte_offset as lastByteOffset,
+              is_synthetic as isSynthetic
+       FROM sessions WHERE id IN (${placeholders(sessionIds.length)})`,
+    )
+    .all(...sessionIds) as SessionRow[];
+}
+
+function loadNodeRows(db: DB, sessionIds: readonly string[]): NodeDTO[] {
+  if (sessionIds.length === 0) return [];
+  return db
+    .prepare(
+      `SELECT uuid, session_id as sessionId, parent_uuid as parentUuid, type, role,
+              content_text as contentText, content_raw as contentRaw, timestamp, seq
+       FROM nodes WHERE session_id IN (${placeholders(sessionIds.length)})
+       ORDER BY session_id, seq`,
+    )
+    .all(...sessionIds) as NodeDTO[];
+}
+
+/** Edges originating FROM one of `nodeUuids` (used to attach forks under their source node). */
+function loadEdgesFromNodes(db: DB, nodeUuids: readonly string[]): BranchEdgeDTO[] {
+  if (nodeUuids.length === 0) return [];
+  return db
+    .prepare(
+      `SELECT id, source_node_uuid as sourceNodeUuid, target_session_id as targetSessionId,
+              edge_type as edgeType, created_at as createdAt
+       FROM branch_edges WHERE source_node_uuid IN (${placeholders(nodeUuids.length)})`,
+    )
+    .all(...nodeUuids) as BranchEdgeDTO[];
+}
+
+/**
+ * Loads every session/node/branch-edge belonging to one project in a handful
+ * of bulk queries (no N+1: one query each for sessions, nodes, and
+ * branch_edges, all scoped to this project's session ids).
+ */
+function loadProjectContext(db: DB, projectId: number): TreeContext {
   const sessionRows = db
     .prepare(
       `SELECT id, project_id as projectId, file_path as filePath, is_sidechain as isSidechain,
@@ -86,55 +149,127 @@ export function buildProjectTree(db: DB, slug: string, log: LogFn = console.warn
               is_synthetic as isSynthetic
        FROM sessions WHERE project_id = ?`,
     )
-    .all(project.id) as SessionRow[];
+    .all(projectId) as SessionRow[];
 
   const sessionsById = new Map<string, SessionDTO>();
   for (const row of sessionRows) sessionsById.set(row.id, toSessionDTO(row));
 
   const sessionIds = [...sessionsById.keys()];
-  const nodesBySession = new Map<string, NodeDTO[]>();
-  const edgesBySourceNode = new Map<string, BranchEdgeDTO[]>();
+  const nodeRows = loadNodeRows(db, sessionIds);
+  const edgeRows = loadEdgesFromNodes(
+    db,
+    nodeRows.map((n) => n.uuid),
+  );
+
+  return {
+    sessionsById,
+    nodesBySession: groupBy(nodeRows, (n) => n.sessionId),
+    edgesBySourceNode: groupBy(edgeRows, (e) => e.sourceNodeUuid),
+  };
+}
+
+/**
+ * Loads only the sessions/nodes/edges reachable from `rootSessionId` by
+ * BFS-ing outward through branch_edges, rather than bulk-loading the whole
+ * project. buildSessionTree backs GET /api/sessions/:id/tree, which fires on
+ * every sidebar click and every relevant live-update event, so pulling in a
+ * project's other, unrelated root conversations just to discard them would
+ * scale with the whole project instead of with the one tree being rendered.
+ */
+function loadSessionSubtreeContext(db: DB, rootSessionId: string): TreeContext {
+  const sessionsById = new Map<string, SessionDTO>();
+  const nodeRows: NodeDTO[] = [];
+  const edgeRows: BranchEdgeDTO[] = [];
+
+  const visited = new Set<string>();
+  let frontier = [rootSessionId];
+
+  while (frontier.length > 0) {
+    for (const row of loadSessionRows(db, frontier)) sessionsById.set(row.id, toSessionDTO(row));
+
+    const frontierNodes = loadNodeRows(db, frontier);
+    nodeRows.push(...frontierNodes);
+
+    const frontierEdges = loadEdgesFromNodes(
+      db,
+      frontierNodes.map((n) => n.uuid),
+    );
+    edgeRows.push(...frontierEdges);
+
+    for (const id of frontier) visited.add(id);
+    frontier = frontierEdges.map((e) => e.targetSessionId).filter((id) => !visited.has(id));
+  }
+
+  return {
+    sessionsById,
+    nodesBySession: groupBy(nodeRows, (n) => n.sessionId),
+    edgesBySourceNode: groupBy(edgeRows, (e) => e.sourceNodeUuid),
+  };
+}
+
+/** Recursively assembles one session's tree (its own nodes plus every fork hanging off it), scoped to `ctx`. */
+function buildSubtree(
+  ctx: TreeContext,
+  sessionId: string,
+  ancestors: ReadonlySet<string>,
+  depth: number,
+  log: LogFn,
+): SessionTreeNodeDTO | null {
+  const { sessionsById, nodesBySession, edgesBySourceNode } = ctx;
+  const session = sessionsById.get(sessionId);
+  if (!session) {
+    // branch_edges.target_session_id pointing at a session outside this
+    // context (or not indexed at all) shouldn't happen per the schema, but
+    // guard rather than crash on a future bug.
+    log(`[tree] branch_edges references unknown/foreign session ${sessionId} — skipping`);
+    return null;
+  }
+  if (ancestors.has(sessionId)) {
+    // See MAX_FOREST_DEPTH doc comment above — cycles should be structurally
+    // impossible, but log and bail rather than recurse forever if one ever appears.
+    log(`[tree] cycle detected in branch_edges forest at session ${sessionId} — skipping`);
+    return null;
+  }
+  if (depth > MAX_FOREST_DEPTH) {
+    log(`[tree] fork depth exceeded ${MAX_FOREST_DEPTH} at session ${sessionId} — truncating`);
+    return { session, nodes: nodesBySession.get(sessionId) ?? [], forks: [] };
+  }
+
+  const nodes = nodesBySession.get(sessionId) ?? [];
+  const nextAncestors = new Set(ancestors);
+  nextAncestors.add(sessionId);
+
+  const forks: SessionForkDTO[] = [];
+  for (const node of nodes) {
+    const edges = edgesBySourceNode.get(node.uuid);
+    if (!edges) continue;
+    for (const edge of edges) {
+      const childTree = buildSubtree(ctx, edge.targetSessionId, nextAncestors, depth + 1, log);
+      if (childTree) forks.push({ edgeType: edge.edgeType, sourceNodeUuid: node.uuid, session: childTree });
+    }
+  }
+
+  return { session, nodes, forks };
+}
+
+/**
+ * Builds the full nested forest for one project. Returns null if the project
+ * slug doesn't exist.
+ */
+export function buildProjectTree(db: DB, slug: string, log: LogFn = console.warn): ProjectTreeDTO | null {
+  const project = getProjectBySlug(db, slug);
+  if (!project) return null;
+
+  const ctx = loadProjectContext(db, project.id);
+  const sessionIds = [...ctx.sessionsById.keys()];
+
+  // Which of this project's sessions are themselves a fork target
+  // (determines forest roots). Queried by target rather than derived from
+  // ctx.edgesBySourceNode so a session is correctly excluded from `roots`
+  // even if its source node somehow lives outside this project's node set
+  // (defensive — shouldn't happen per schema).
   const incomingTargetSessionIds = new Set<string>();
-
   if (sessionIds.length > 0) {
-    const nodeRows = db
-      .prepare(
-        `SELECT uuid, session_id as sessionId, parent_uuid as parentUuid, type, role,
-                content_text as contentText, content_raw as contentRaw, timestamp, seq
-         FROM nodes WHERE session_id IN (${placeholders(sessionIds.length)})
-         ORDER BY session_id, seq`,
-      )
-      .all(...sessionIds) as NodeDTO[];
-
-    for (const node of nodeRows) {
-      const bucket = nodesBySession.get(node.sessionId);
-      if (bucket) bucket.push(node);
-      else nodesBySession.set(node.sessionId, [node]);
-    }
-
-    // Edges originating FROM a node in this project (used to attach forks under their source node).
-    const nodeUuids = nodeRows.map((n) => n.uuid);
-    if (nodeUuids.length > 0) {
-      const edgeRows = db
-        .prepare(
-          `SELECT id, source_node_uuid as sourceNodeUuid, target_session_id as targetSessionId,
-                  edge_type as edgeType, created_at as createdAt
-           FROM branch_edges WHERE source_node_uuid IN (${placeholders(nodeUuids.length)})`,
-        )
-        .all(...nodeUuids) as BranchEdgeDTO[];
-
-      for (const edge of edgeRows) {
-        const bucket = edgesBySourceNode.get(edge.sourceNodeUuid);
-        if (bucket) bucket.push(edge);
-        else edgesBySourceNode.set(edge.sourceNodeUuid, [edge]);
-      }
-    }
-
-    // Separately: which of THIS project's sessions are themselves a fork
-    // target (determines forest roots). Queried by target rather than
-    // derived from edgesBySourceNode above so a session is correctly
-    // excluded from `roots` even if its source node somehow lives outside
-    // this project's node set (defensive — shouldn't happen per schema).
     const targetRows = db
       .prepare(
         `SELECT DISTINCT target_session_id as targetSessionId
@@ -144,49 +279,31 @@ export function buildProjectTree(db: DB, slug: string, log: LogFn = console.warn
     for (const row of targetRows) incomingTargetSessionIds.add(row.targetSessionId);
   }
 
-  function buildSubtree(sessionId: string, ancestors: ReadonlySet<string>, depth: number): SessionTreeNodeDTO | null {
-    const session = sessionsById.get(sessionId);
-    if (!session) {
-      // branch_edges.target_session_id pointing at a session outside this
-      // project (or not indexed at all) shouldn't happen per the schema, but
-      // guard rather than crash on a future bug.
-      log(`[tree] project=${slug}: branch_edges references unknown/foreign session ${sessionId} — skipping`);
-      return null;
-    }
-    if (ancestors.has(sessionId)) {
-      // See MAX_FOREST_DEPTH doc comment above — cycles should be structurally
-      // impossible, but log and bail rather than recurse forever if one ever appears.
-      log(`[tree] project=${slug}: cycle detected in branch_edges forest at session ${sessionId} — skipping`);
-      return null;
-    }
-    if (depth > MAX_FOREST_DEPTH) {
-      log(`[tree] project=${slug}: fork depth exceeded ${MAX_FOREST_DEPTH} at session ${sessionId} — truncating`);
-      return { session, nodes: nodesBySession.get(sessionId) ?? [], forks: [] };
-    }
-
-    const nodes = nodesBySession.get(sessionId) ?? [];
-    const nextAncestors = new Set(ancestors);
-    nextAncestors.add(sessionId);
-
-    const forks: SessionForkDTO[] = [];
-    for (const node of nodes) {
-      const edges = edgesBySourceNode.get(node.uuid);
-      if (!edges) continue;
-      for (const edge of edges) {
-        const childTree = buildSubtree(edge.targetSessionId, nextAncestors, depth + 1);
-        if (childTree) forks.push({ edgeType: edge.edgeType, sourceNodeUuid: node.uuid, session: childTree });
-      }
-    }
-
-    return { session, nodes, forks };
-  }
-
   const roots: SessionTreeNodeDTO[] = [];
   for (const sessionId of sessionIds) {
     if (incomingTargetSessionIds.has(sessionId)) continue; // not a root — attached as a fork elsewhere in the recursion below
-    const tree = buildSubtree(sessionId, new Set(), 0);
+    const tree = buildSubtree(ctx, sessionId, new Set(), 0, log);
     if (tree) roots.push(tree);
   }
 
   return { project, roots };
+}
+
+/**
+ * Builds a single conversation's tree — one root session plus every fork
+ * (recursively) hanging off it — wrapped in the same ProjectTreeDTO shape as
+ * buildProjectTree but with exactly one entry in `roots`, so every existing
+ * forest consumer (turnGraph.ts, TreeCanvas) renders it unchanged as one
+ * standalone tree instead of the project's whole forest. Returns null if
+ * `sessionId` doesn't exist.
+ */
+export function buildSessionTree(db: DB, sessionId: string, log: LogFn = console.warn): ProjectTreeDTO | null {
+  const project = getProjectForSession(db, sessionId);
+  if (!project) return null;
+
+  const ctx = loadSessionSubtreeContext(db, sessionId);
+  const root = buildSubtree(ctx, sessionId, new Set(), 0, log);
+  if (!root) return null;
+
+  return { project, roots: [root] };
 }

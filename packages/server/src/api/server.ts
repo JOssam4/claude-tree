@@ -14,8 +14,8 @@ import { createPtyManager } from "../resume/ptyManager.js";
 import { buildResumeCommand } from "../resume/resumeCommand.js";
 import { forkSessionFromNode } from "../resume/sessionForker.js";
 import { getNodeDetail } from "./nodeDetail.js";
-import { listProjectSummaries } from "./projectQueries.js";
-import { buildProjectTree } from "./treeBuilder.js";
+import { listConversationSummaries, listProjectSummaries } from "./projectQueries.js";
+import { buildProjectTree, buildSessionTree } from "./treeBuilder.js";
 
 const UUID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 
@@ -34,6 +34,31 @@ export async function createApiServer(db: DB): Promise<ApiServer> {
   const clients = new Set<WebSocket>();
 
   app.get("/api/projects", async () => listProjectSummaries(db));
+
+  // Sidebar's conversation list: one entry per root session across every
+  // project (see ConversationSummaryDTO's doc comment for "root").
+  app.get("/api/conversations", async () => listConversationSummaries(db));
+
+  app.get<{ Params: { id: string } }>(
+    "/api/sessions/:id/tree",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string", pattern: UUID_PATTERN } },
+          required: ["id"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const tree = buildSessionTree(db, request.params.id, (msg) => app.log.warn(msg));
+      if (!tree) {
+        reply.code(404);
+        return { error: `session not found: ${request.params.id}` };
+      }
+      return tree;
+    },
+  );
 
   app.get<{ Params: { slug: string } }>(
     "/api/projects/:slug/tree",

@@ -3,7 +3,7 @@
  * app's own SQLite DB (never touches ~/.claude directly — that constraint
  * belongs to the indexer/watcher, not the API layer).
  */
-import type { ProjectSummaryDTO } from "@claude-tree/shared";
+import type { ConversationSummaryDTO, ProjectSummaryDTO } from "@claude-tree/shared";
 import type { DB } from "../db/client.js";
 
 /**
@@ -30,4 +30,27 @@ export function listProjectSummaries(db: DB): ProjectSummaryDTO[] {
        ORDER BY p.last_seen_at DESC`,
     )
     .all() as ProjectSummaryDTO[];
+}
+
+/**
+ * One row per conversation (root session — same "no branch_edges targets it"
+ * definition as rootSessionCount above), across every project, newest-indexed
+ * first. Backs the sidebar's conversation list (GET /api/conversations).
+ */
+export function listConversationSummaries(db: DB): ConversationSummaryDTO[] {
+  return db
+    .prepare(
+      `SELECT
+         s.id as sessionId,
+         p.slug as projectSlug,
+         p.cwd as projectCwd,
+         s.ai_title as aiTitle,
+         s.created_at as createdAt,
+         s.last_indexed_at as lastIndexedAt
+       FROM sessions s
+       JOIN projects p ON p.id = s.project_id
+       WHERE NOT EXISTS (SELECT 1 FROM branch_edges be WHERE be.target_session_id = s.id)
+       ORDER BY s.last_indexed_at DESC`,
+    )
+    .all() as ConversationSummaryDTO[];
 }

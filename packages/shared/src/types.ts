@@ -77,6 +77,18 @@ export interface ProjectSummaryDTO extends ProjectDTO {
 }
 
 /**
+ * One conversation (a root session — see rootSessionCount's doc comment for
+ * the definition) across ALL projects, as returned by GET /api/conversations.
+ * Backs the sidebar's conversation list: each entry's `sessionId` is what
+ * GET /api/sessions/:sessionId/tree takes to render just that one tree.
+ */
+export interface ConversationSummaryDTO extends Pick<SessionDTO, "aiTitle" | "createdAt" | "lastIndexedAt"> {
+  sessionId: string;
+  projectSlug: string;
+  projectCwd: string;
+}
+
+/**
  * A single session forked off of some node in its parent session, nested one
  * level down in the forest. `sourceNodeUuid` is the node (in the PARENT
  * session) the fork originated from — redundant with the parent's own node

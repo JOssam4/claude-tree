@@ -4,7 +4,7 @@
  * proxy, see vite.config.ts) and prod (server can serve the built assets),
  * so no base URL configuration needed.
  */
-import type { BranchResponseDTO, NodeDetailDTO, ProjectSummaryDTO, ProjectTreeDTO } from "@claude-tree/shared";
+import type { BranchResponseDTO, ConversationSummaryDTO, NodeDetailDTO, ProjectTreeDTO } from "@claude-tree/shared";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -14,12 +14,14 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function getProjects(): Promise<ProjectSummaryDTO[]> {
-  return getJson<ProjectSummaryDTO[]>("/api/projects");
+/** Sidebar's conversation list: one entry per root session across every project. */
+export function getConversations(): Promise<ConversationSummaryDTO[]> {
+  return getJson<ConversationSummaryDTO[]>("/api/conversations");
 }
 
-export function getProjectTree(slug: string): Promise<ProjectTreeDTO> {
-  return getJson<ProjectTreeDTO>(`/api/projects/${encodeURIComponent(slug)}/tree`);
+/** A single conversation's tree, wrapped in the same ProjectTreeDTO forest shape as the server's project-tree route, but with exactly one root. */
+export function getSessionTree(sessionId: string): Promise<ProjectTreeDTO> {
+  return getJson<ProjectTreeDTO>(`/api/sessions/${encodeURIComponent(sessionId)}/tree`);
 }
 
 export function getNodeDetail(uuid: string): Promise<NodeDetailDTO> {
