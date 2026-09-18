@@ -167,6 +167,15 @@ export interface BackfillSummary {
   warnings: string[];
 }
 
+/** Summary counts produced by one stale-session prune sweep, used for logging. */
+export interface PruneSummary {
+  sessionsPruned: number;
+  nodesPruned: number;
+  branchEdgesPruned: number;
+  projectsPruned: number;
+  warnings: string[];
+}
+
 /**
  * Payload emitted whenever the live watcher (packages/server/src/indexer/watcher.ts)
  * commits new nodes for a session — either from a brand-new file or from

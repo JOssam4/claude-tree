@@ -279,6 +279,11 @@ async function handleChange(db: DB, filePath: string, onUpdate: WatcherUpdateFn,
       `[watcher] WARNING: ${filePath} shrank (size=${currentSize} < last_byte_offset=${session.lastByteOffset}); ` +
         `treating as rewritten/compacted and re-indexing fully from byte 0`,
     );
+    // NOTE: pre-existing gap, not fixed here — this deletes nodes without first
+    // deleting any branch_edges rows sourced from them, which would throw
+    // SQLITE_CONSTRAINT_FOREIGNKEY today if this session ever sourced a
+    // branch/subagent edge. See prune.ts's pruneOneSession for the correct
+    // branch_edges -> nodes -> sessions ordering.
     db.prepare(`DELETE FROM nodes WHERE session_id = ?`).run(ctx.sessionId);
     db.prepare(`UPDATE sessions SET last_byte_offset = 0 WHERE id = ?`).run(ctx.sessionId);
     await handleAdd(db, filePath, onUpdate, log);

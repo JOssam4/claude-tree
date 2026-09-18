@@ -15,6 +15,7 @@ import { createApiServer } from "./api/server.js";
 import { CLAUDE_PROJECTS_DIR, DB_PATH, HTTP_PORT } from "./config.js";
 import { openDb } from "./db/client.js";
 import { runBackfill } from "./indexer/backfill.js";
+import { startPruneJob } from "./indexer/prune.js";
 import { startWatcher } from "./indexer/watcher.js";
 
 async function main(): Promise<void> {
@@ -44,6 +45,8 @@ async function main(): Promise<void> {
 
   console.log(`[startup] watcher running, watching ${CLAUDE_PROJECTS_DIR}/**/*.jsonl`);
 
+  const pruneHandle = startPruneJob(db, {}, (msg) => console.log(msg));
+
   await api.listen(HTTP_PORT);
   console.log(`[startup] API server listening on http://127.0.0.1:${HTTP_PORT} (WS at /ws)`);
   console.log("[startup] ready. Press Ctrl+C to stop.");
@@ -54,6 +57,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     console.log(`\n[shutdown] received ${signal}, closing watcher and API server...`);
     await handle.close();
+    await pruneHandle.close();
     await api.close();
     db.close();
     console.log("[shutdown] done.");

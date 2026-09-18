@@ -36,3 +36,12 @@ export const SCHEMA_SQL_PATH = path.join(__dirname, "db", "schema.sql");
 
 /** HTTP/WS server port. Local-only tool — no auth, override via env if 4317 collides with something else. */
 export const HTTP_PORT = Number(process.env.CLAUDE_TREE_PORT ?? 4317);
+
+/**
+ * How often the background prune job sweeps for sessions whose backing
+ * .jsonl file has been deleted (Claude Code's own CLI auto-deletes session
+ * files older than its `cleanupPeriodDays` setting, default 30 days).
+ * Overridable for testing/tuning, analogous to Claude Code's own
+ * cleanupPeriodDays being user-configurable.
+ */
+export const PRUNE_INTERVAL_MS = Number(process.env.CLAUDE_TREE_PRUNE_INTERVAL_MS ?? 24 * 60 * 60 * 1000);
