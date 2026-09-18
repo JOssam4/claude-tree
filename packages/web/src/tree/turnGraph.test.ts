@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NodeDTO, ProjectTreeDTO, SessionDTO, SessionForkDTO, SessionTreeNodeDTO } from "@claude-tree/shared";
-import { buildForestGraph, type PlaceholderNode, type TurnNode } from "./turnGraph.js";
+import { buildForestGraph, type TurnNode } from "./turnGraph.js";
 
 let seq = 0;
 function makeUuid(label: string): string {
@@ -60,9 +60,6 @@ function makeProjectTree(roots: SessionTreeNodeDTO[]): ProjectTreeDTO {
 
 function isTurnNode(n: { type: string }): n is TurnNode {
   return n.type === "turn";
-}
-function isPlaceholderNode(n: { type: string }): n is PlaceholderNode {
-  return n.type === "placeholder";
 }
 
 describe("buildForestGraph / turn grouping", () => {
@@ -244,7 +241,7 @@ describe("buildForestGraph / fork attachment", () => {
     expect(forkEdge?.source).toBe(`${sessionId}#0`);
   });
 
-  it("renders a placeholder node (not a real turn) for a fork whose target session has zero indexed nodes yet", () => {
+  it("renders nothing at all for a fork whose target session has zero indexed nodes yet", () => {
     const sessionId = "root-sess3";
     const { nodes, uuids } = buildThreeTurnRoot(sessionId);
     const forkSessionId = "fresh-fork-sess";
@@ -256,14 +253,10 @@ describe("buildForestGraph / fork attachment", () => {
     const tree = makeProjectTree([makeSessionTree(makeSession(sessionId), nodes, [fork])]);
 
     const { nodes: outNodes, edges } = buildForestGraph(tree);
-    const placeholder = outNodes.filter(isPlaceholderNode);
-    expect(placeholder).toHaveLength(1);
-    expect(placeholder[0]?.id).toBe(`placeholder-${forkSessionId}`);
-    expect(placeholder[0]?.data).toEqual({ sessionId: forkSessionId, edgeType: "branch" });
-
-    const forkEdge = edges.find((e) => e.id.startsWith("fork-"));
-    expect(forkEdge?.source).toBe(`${sessionId}#2`); // uuids.u3 is in the third (last) turn
-    expect(forkEdge?.target).toBe(`placeholder-${forkSessionId}`);
+    // No node for the empty fork, and no dangling edge pointing at it either —
+    // it's pure noise until the fork has a real first message.
+    expect(outNodes.some((n) => n.id.includes(forkSessionId))).toBe(false);
+    expect(edges.some((e) => e.id.startsWith("fork-"))).toBe(false);
   });
 
   it("recursively nests a fork-of-a-fork (branch, then subagent, two levels deep)", () => {

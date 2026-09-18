@@ -58,28 +58,8 @@ export interface TurnNodeData extends Record<string, unknown> {
 
 export type TurnNode = Node<TurnNodeData, "turn">;
 
-/**
- * Milestone 6: a freshly-forked session has zero of its own indexed `nodes`
- * (its shared-prefix lines' uuids already belong to the original session, so
- * `INSERT OR IGNORE` skips them) until the user's first genuinely new message
- * gets appended and indexed. Without special-casing this, the fork would
- * render nothing at all — no box, no edge — since there's no real turn to
- * anchor either to. This placeholder is keyed directly off the `branch_edges`
- * row itself (via `fork.session.session`, which always exists immediately
- * after a successful branch call), not off indexed node data, so it appears
- * the instant the branch API call succeeds. It disappears on its own: once
- * the session gets indexed, the next `tree:update` broadcast triggers
- * App.tsx's refetch, `fork.session.nodes` is non-empty, and
- * `buildSessionSubtree` renders a real `TurnNode` in its place instead.
- */
-export interface PlaceholderNodeData extends Record<string, unknown> {
-  sessionId: string;
-  edgeType: "branch" | "subagent";
-}
-export type PlaceholderNode = Node<PlaceholderNodeData, "placeholder">;
-
-/** Everything `buildForestGraph` can hand xyflow — a real turn box or a not-yet-indexed fork's placeholder. */
-export type TreeFlowNode = TurnNode | PlaceholderNode;
+/** Everything `buildForestGraph` can hand xyflow — currently just real turn boxes. */
+export type TreeFlowNode = TurnNode;
 
 export type ForkEdgeData = Record<string, never>;
 export type TurnEdge = Edge<ForkEdgeData>;
@@ -285,27 +265,12 @@ function buildSessionSubtree(
     if (!sourceTurnId) continue; // this session has no visible turn at all to attach the fork to
 
     if (fork.session.nodes.length === 0) {
-      // See PlaceholderNodeData doc comment: this fork's target session exists
-      // (the branch call succeeded and its branch_edges/sessions rows are
-      // real) but has no indexed content yet. A zero-node session can't
-      // itself have any forks yet either (you can only branch from an
-      // existing indexed node), so there's nothing to recurse into.
-      const placeholderId = `placeholder-${fork.session.session.id}`;
-      nodes.push({
-        id: placeholderId,
-        type: "placeholder",
-        position: { x: 0, y: 0 }, // overwritten by dagre in layoutForest
-        data: { sessionId: fork.session.session.id, edgeType: fork.edgeType },
-      });
-      edges.push({
-        id: `fork-${fork.sourceNodeUuid}-${placeholderId}`,
-        source: sourceTurnId,
-        target: placeholderId,
-        type: "smoothstep",
-        className: fork.edgeType === "subagent" ? "edge-subagent" : "edge-branch",
-        label: fork.edgeType,
-        data: {},
-      });
+      // This fork's target session exists (the branch call succeeded and its
+      // branch_edges/sessions rows are real) but has no indexed content yet —
+      // nothing but noise to show the user, so skip it entirely. It appears
+      // once real content exists: the next `tree:update` broadcast triggers
+      // App.tsx's refetch, `fork.session.nodes` is non-empty, and this same
+      // loop renders a real `TurnNode` for it below instead.
       continue;
     }
 
