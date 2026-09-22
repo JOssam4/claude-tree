@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import type { ConversationSummaryDTO } from '@claude-tree/shared';
-import {Conversation} from "./Conversation";
+import { Conversation } from './Conversation';
 
 interface ConversationListProps {
   conversations: ConversationSummaryDTO[];
@@ -8,81 +7,15 @@ interface ConversationListProps {
   onSelect: (sessionId: string) => void;
 }
 
-interface ProjectGroup {
-  projectSlug: string;
-  projectCwd: string;
-  conversations: ConversationSummaryDTO[];
-}
-
-/**
- * Groups conversations by project without disturbing their existing order.
- * `conversations` arrives sorted most-recent-activity-first (see
- * listConversationSummaries), so a project's position ends up set by its most
- * recent conversation, and conversations stay in that order within each
- * project's group — Map preserves insertion order, so the first time a
- * project's slug is seen fixes the group's position.
- */
-function groupByProject(conversations: ConversationSummaryDTO[]): ProjectGroup[] {
-  const groups = new Map<string, ProjectGroup>();
-  for (const c of conversations) {
-    let group = groups.get(c.projectSlug);
-    if (!group) {
-      group = { projectSlug: c.projectSlug, projectCwd: c.projectCwd, conversations: [] };
-      groups.set(c.projectSlug, group);
-    }
-    group.conversations.push(c);
-  }
-  return [...groups.values()];
-}
-
-/** Sidebar listing every indexed conversation (root session), grouped by project (working directory); click one to render its tree. */
+/** List of conversations (root sessions) belonging to a single project; click one to render its tree. */
 export function ConversationList({ conversations, selectedSessionId, onSelect }: ConversationListProps) {
-  const projectGroups = groupByProject(conversations);
-  const [collapsedSlugs, setCollapsedSlugs] = useState<Set<string>>(() => new Set());
-
-  const toggleProject = (projectSlug: string) => {
-    setCollapsedSlugs((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectSlug)) {
-        next.delete(projectSlug);
-      } else {
-        next.add(projectSlug);
-      }
-      return next;
-    });
-  };
-
   return (
-    <div className="conversation-list">
-      <h2>Conversations</h2>
-      {conversations.length === 0 && <p className="conversation-list__empty">No conversations indexed yet.</p>}
-      {projectGroups.map((group) => {
-        const isCollapsed = collapsedSlugs.has(group.projectSlug);
-        return (
-          <div className="conversation-list__project" key={group.projectSlug}>
-            <button
-              type="button"
-              className="conversation-list__project-name"
-              onClick={() => toggleProject(group.projectSlug)}
-              aria-expanded={!isCollapsed}
-            >
-              <span className={`conversation-list__project-caret${isCollapsed ? ' conversation-list__project-caret--collapsed' : ''}`}>
-                ▾
-              </span>
-              {group.projectCwd}
-            </button>
-            {!isCollapsed && (
-              <ul>
-                {group.conversations.map((c) => (
-                  <li key={c.sessionId}>
-                    <Conversation conversation={c} selectedSessionId={selectedSessionId} onSelect={onSelect} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <ul>
+      {conversations.map((c) => (
+        <li key={c.sessionId}>
+          <Conversation conversation={c} selectedSessionId={selectedSessionId} onSelect={onSelect} />
+        </li>
+      ))}
+    </ul>
   );
 }

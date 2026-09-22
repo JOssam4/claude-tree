@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BranchResponseDTO, ConversationSummaryDTO, ProjectTreeDTO } from '@claude-tree/shared';
 import { branchFromNode, getConversations, getSessionTree } from './api/client';
 import { useTreeUpdates } from './api/useTreeUpdates';
-import { ConversationList } from './components/ConversationList';
+import { ProjectList } from './components/ProjectList';
 import { TreeCanvas } from './components/TreeCanvas';
 
 // There used to be a "⑂ branch" action here too (a `terminalBranch` state +
@@ -93,7 +93,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="app__sidebar">
-        <ConversationList
+        <ProjectList
           conversations={conversations}
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}
