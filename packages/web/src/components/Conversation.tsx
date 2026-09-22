@@ -17,7 +17,6 @@ export const Conversation = ({conversation, selectedSessionId, onSelect}: Conver
             onClick={() => onSelect(conversation.sessionId)}
         >
             <div className="conversation-list__title">{conversation.aiTitle ?? '(untitled conversation)'}</div>
-            <div className="conversation-list__meta">{conversation.projectCwd}</div>
         </button>
     );
 }
