@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ConversationSummaryDTO } from '@claude-tree/shared';
 import {Conversation} from "./Conversation";
 
@@ -37,22 +38,51 @@ function groupByProject(conversations: ConversationSummaryDTO[]): ProjectGroup[]
 /** Sidebar listing every indexed conversation (root session), grouped by project (working directory); click one to render its tree. */
 export function ConversationList({ conversations, selectedSessionId, onSelect }: ConversationListProps) {
   const projectGroups = groupByProject(conversations);
+  const [collapsedSlugs, setCollapsedSlugs] = useState<Set<string>>(() => new Set());
+
+  const toggleProject = (projectSlug: string) => {
+    setCollapsedSlugs((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectSlug)) {
+        next.delete(projectSlug);
+      } else {
+        next.add(projectSlug);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="conversation-list">
       <h2>Conversations</h2>
       {conversations.length === 0 && <p className="conversation-list__empty">No conversations indexed yet.</p>}
-      {projectGroups.map((group) => (
-        <div className="conversation-list__project" key={group.projectSlug}>
-          <h3 className="conversation-list__project-name">{group.projectCwd}</h3>
-          <ul>
-            {group.conversations.map((c) => (
-              <li key={c.sessionId}>
-                <Conversation conversation={c} selectedSessionId={selectedSessionId} onSelect={onSelect} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      {projectGroups.map((group) => {
+        const isCollapsed = collapsedSlugs.has(group.projectSlug);
+        return (
+          <div className="conversation-list__project" key={group.projectSlug}>
+            <button
+              type="button"
+              className="conversation-list__project-name"
+              onClick={() => toggleProject(group.projectSlug)}
+              aria-expanded={!isCollapsed}
+            >
+              <span className={`conversation-list__project-caret${isCollapsed ? ' conversation-list__project-caret--collapsed' : ''}`}>
+                ▾
+              </span>
+              {group.projectCwd}
+            </button>
+            {!isCollapsed && (
+              <ul>
+                {group.conversations.map((c) => (
+                  <li key={c.sessionId}>
+                    <Conversation conversation={c} selectedSessionId={selectedSessionId} onSelect={onSelect} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
