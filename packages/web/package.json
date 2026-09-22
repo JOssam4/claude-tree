@@ -15,7 +15,9 @@
     "@xyflow/react": "^12.11.6",
     "dagre": "^0.8.5",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/dagre": "^0.7.54",

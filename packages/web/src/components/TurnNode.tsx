@@ -1,4 +1,6 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import type { TurnNode as TurnNodeType } from '../tree/turnGraph';
 
@@ -41,7 +43,13 @@ export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
       {data.assistantText && (
         <>
           <div className="turn-node__speaker turn-node__speaker--assistant">Claude</div>
-          <div className="turn-node__assistant">{data.assistantText}</div>
+          <div className="turn-node__assistant">
+            {data.isExpanded ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.assistantText}</ReactMarkdown>
+            ) : (
+              data.assistantText
+            )}
+          </div>
         </>
       )}
       <div className="turn-node__actions">
