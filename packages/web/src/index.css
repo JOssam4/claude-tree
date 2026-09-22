@@ -143,23 +143,30 @@ body {
 .conversation-list__project-name {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
   border: none;
+  border-radius: 4px;
   background: none;
-  padding: 0;
+  padding: 4px 6px;
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 700;
   font-family: ui-monospace, monospace;
-  color: var(--color-muted-2);
+  color: var(--color-text);
   text-align: left;
   word-break: break-all;
   cursor: pointer;
 }
+.conversation-list__project-name:hover {
+  background: var(--color-item-hover-bg);
+}
 .conversation-list__project-caret {
   display: inline-block;
   flex-shrink: 0;
-  transition: transform 0.1s ease;
+  font-size: 14px;
+  color: var(--color-accent);
+  transition: transform 0.15s ease;
 }
 .conversation-list__project-caret--collapsed {
   transform: rotate(-90deg);
