@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL,
   last_indexed_at TEXT NOT NULL,
   last_byte_offset INTEGER NOT NULL DEFAULT 0,
-  is_synthetic INTEGER NOT NULL DEFAULT 0 -- 1 = created by our own branch/resume action (not used yet, but included now)
+  is_synthetic INTEGER NOT NULL DEFAULT 0, -- 1 = created by our own branch/resume action (not used yet, but included now)
+  hidden INTEGER NOT NULL DEFAULT 0 -- 1 = user hid this conversation from the sidebar (not deleted); never touched by the indexer's upserts
 );
 
 CREATE TABLE IF NOT EXISTS nodes (

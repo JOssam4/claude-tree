@@ -36,3 +36,15 @@ export async function branchFromNode(uuid: string): Promise<BranchResponseDTO> {
   }
   return (await res.json()) as BranchResponseDTO;
 }
+
+/** Shows/hides a conversation in the sidebar — a display preference only, never deletes anything. */
+export async function setConversationHidden(sessionId: string, hidden: boolean): Promise<void> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(sessionId)}/hidden`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hidden }),
+  });
+  if (!res.ok) {
+    throw new Error(`PATCH hidden for ${sessionId} failed: ${res.status} ${res.statusText}`);
+  }
+}

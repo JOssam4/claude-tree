@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type DB } from "../db/client.js";
-import { listConversationSummaries } from "./projectQueries.js";
+import { listConversationSummaries, setConversationHidden } from "./projectQueries.js";
 
 // listConversationSummaries only ever queries `db` (this app's own SQLite
 // DB), so these tests build rows directly via raw SQL against an in-memory
@@ -144,5 +144,21 @@ describe("listConversationSummaries", () => {
 
     // Both sessions are branch_edges targets, so neither is a root.
     expect(listConversationSummaries(db)).toEqual([]);
+  });
+
+  it("defaults isHidden to false and reflects setConversationHidden", () => {
+    const projectId = insertProject(db, "-tmp-hidden");
+    const sessionId = uuid();
+    insertSession(db, sessionId, projectId, "2026-01-01T00:00:00Z");
+
+    expect(listConversationSummaries(db)[0]?.isHidden).toBe(false);
+
+    expect(setConversationHidden(db, sessionId, true)).toBe(true);
+    expect(listConversationSummaries(db)[0]?.isHidden).toBe(true);
+
+    expect(setConversationHidden(db, sessionId, false)).toBe(true);
+    expect(listConversationSummaries(db)[0]?.isHidden).toBe(false);
+
+    expect(setConversationHidden(db, "does-not-exist", true)).toBe(false);
   });
 });

@@ -53,8 +53,12 @@ export function listProjectSummaries(db: DB): ProjectSummaryDTO[] {
  * UNION dedupes (root_id, session_id) pairs, so the row set is bounded by
  * sessions.length and the recursion reaches a fixpoint.
  */
+interface ConversationSummaryRow extends Omit<ConversationSummaryDTO, "isHidden"> {
+  isHidden: number;
+}
+
 export function listConversationSummaries(db: DB): ConversationSummaryDTO[] {
-  return db
+  const rows = db
     .prepare(
       `WITH RECURSIVE tree(root_id, session_id) AS (
          SELECT s.id, s.id
@@ -79,12 +83,25 @@ export function listConversationSummaries(db: DB): ConversationSummaryDTO[] {
          s.ai_title as aiTitle,
          s.created_at as createdAt,
          s.last_indexed_at as lastIndexedAt,
-         COALESCE(ta.lastActivityAt, s.created_at) as lastActivityAt
+         COALESCE(ta.lastActivityAt, s.created_at) as lastActivityAt,
+         s.hidden as isHidden
        FROM sessions s
        JOIN projects p ON p.id = s.project_id
        JOIN tree_activity ta ON ta.rootId = s.id
        WHERE NOT EXISTS (SELECT 1 FROM branch_edges be WHERE be.target_session_id = s.id)
        ORDER BY COALESCE(ta.lastActivityAt, s.created_at) DESC`,
     )
-    .all() as ConversationSummaryDTO[];
+    .all() as ConversationSummaryRow[];
+  return rows.map((row) => ({ ...row, isHidden: row.isHidden === 1 }));
+}
+
+/**
+ * Sets (or clears) the hidden flag on a conversation's root session, backing
+ * PATCH /api/conversations/:id/hidden. A display-only preference — never
+ * touches nodes/branch_edges, so hiding a conversation stays fully
+ * reversible. Returns false if no session with that id exists.
+ */
+export function setConversationHidden(db: DB, sessionId: string, hidden: boolean): boolean {
+  const result = db.prepare(`UPDATE sessions SET hidden = ? WHERE id = ?`).run(hidden ? 1 : 0, sessionId);
+  return result.changes > 0;
 }

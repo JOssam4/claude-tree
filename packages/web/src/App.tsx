@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BranchResponseDTO, ConversationSummaryDTO, ProjectTreeDTO } from '@claude-tree/shared';
-import { branchFromNode, getConversations, getSessionTree } from './api/client';
+import { branchFromNode, getConversations, getSessionTree, setConversationHidden } from './api/client';
 import { useTreeUpdates } from './api/useTreeUpdates';
 import { ProjectList } from './components/ProjectList';
 import { TreeCanvas } from './components/TreeCanvas';
@@ -73,6 +73,18 @@ export const App = () => {
     if (selectedSessionId && event.projectSlug === tree?.project.slug) refetchTree(selectedSessionId);
   });
 
+  // Hides/unhides a conversation in the sidebar. Applied optimistically (the
+  // sidebar shouldn't wait on a round-trip for a toggle this trivial) and
+  // reverted if the PATCH fails, since conversations is otherwise only ever
+  // replaced wholesale by refetchConversations.
+  const handleToggleHidden = useCallback((sessionId: string, hidden: boolean) => {
+    setConversations((prev) => prev.map((c) => (c.sessionId === sessionId ? { ...c, isHidden: hidden } : c)));
+    setConversationHidden(sessionId, hidden).catch((e: Error) => {
+      setConversations((prev) => prev.map((c) => (c.sessionId === sessionId ? { ...c, isHidden: !hidden } : c)));
+      setError(e.message);
+    });
+  }, []);
+
   // Milestone 8: resolves to the resumeCommand, or null (after surfacing the error)
   // so the button can just skip copying rather than copy an error message.
   const handleCopyResumeCommand = useCallback(
@@ -97,6 +109,7 @@ export const App = () => {
           conversations={conversations}
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}
+          onToggleHidden={handleToggleHidden}
         />
       </aside>
       <main className="app__main">

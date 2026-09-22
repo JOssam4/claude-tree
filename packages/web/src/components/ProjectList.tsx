@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ConversationSummaryDTO } from '@claude-tree/shared';
 import { Project } from './Project';
 
@@ -5,6 +6,7 @@ interface ProjectListProps {
   conversations: ConversationSummaryDTO[];
   selectedSessionId: string | null;
   onSelect: (sessionId: string) => void;
+  onToggleHidden: (sessionId: string, hidden: boolean) => void;
 }
 
 interface ProjectGroup {
@@ -35,8 +37,11 @@ function groupByProject(conversations: ConversationSummaryDTO[]): ProjectGroup[]
 }
 
 /** Sidebar listing every indexed conversation (root session), grouped by project (working directory); click one to render its tree. */
-export const ProjectList = ({ conversations, selectedSessionId, onSelect }: ProjectListProps) => {
-  const projectGroups = groupByProject(conversations);
+export const ProjectList = ({ conversations, selectedSessionId, onSelect, onToggleHidden }: ProjectListProps) => {
+  const [showHidden, setShowHidden] = useState(false);
+  const hiddenCount = conversations.filter((c) => c.isHidden).length;
+  const visibleConversations = showHidden ? conversations : conversations.filter((c) => !c.isHidden);
+  const projectGroups = groupByProject(visibleConversations);
   return (
     <div className="conversation-list">
       <h2>Conversations</h2>
@@ -48,8 +53,16 @@ export const ProjectList = ({ conversations, selectedSessionId, onSelect }: Proj
           conversations={group.conversations}
           selectedSessionId={selectedSessionId}
           onSelect={onSelect}
+          onToggleHidden={onToggleHidden}
         />
       ))}
+      {hiddenCount > 0 ? (
+        <button type="button" className="conversation-list__show-hidden" onClick={() => setShowHidden((s) => !s)}>
+          {showHidden ? 'Hide hidden conversations' : `Show ${hiddenCount} hidden conversation${hiddenCount === 1 ? '' : 's'}`}
+        </button>
+      ) : (
+        <p className="conversation-list__show-hidden conversation-list__show-hidden--empty">No hidden conversations</p>
+      )}
     </div>
   );
 };

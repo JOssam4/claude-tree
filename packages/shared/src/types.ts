@@ -94,6 +94,12 @@ export interface ConversationSummaryDTO extends Pick<SessionDTO, "aiTitle" | "cr
    * so a still-active old conversation surfaces above a newer but idle one.
    */
   lastActivityAt: string;
+  /**
+   * True if the user hid this conversation from the sidebar (see PATCH
+   * /api/conversations/:id/hidden). Purely a display preference stored in
+   * this app's own DB — never deletes anything, and survives reloads/restarts.
+   */
+  isHidden: boolean;
 }
 
 /**

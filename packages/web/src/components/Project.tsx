@@ -7,10 +7,11 @@ interface ProjectProps {
   conversations: ConversationSummaryDTO[];
   selectedSessionId: string | null;
   onSelect: (sessionId: string) => void;
+  onToggleHidden: (sessionId: string, hidden: boolean) => void;
 }
 
 /** One collapsible project group: a header toggling the visibility of its conversation list. */
-export const Project = ({ projectCwd, conversations, selectedSessionId, onSelect }: ProjectProps) => {
+export const Project = ({ projectCwd, conversations, selectedSessionId, onSelect, onToggleHidden }: ProjectProps) => {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -27,7 +28,12 @@ export const Project = ({ projectCwd, conversations, selectedSessionId, onSelect
         {projectCwd}
       </button>
       {!collapsed && (
-        <ConversationList conversations={conversations} selectedSessionId={selectedSessionId} onSelect={onSelect} />
+        <ConversationList
+          conversations={conversations}
+          selectedSessionId={selectedSessionId}
+          onSelect={onSelect}
+          onToggleHidden={onToggleHidden}
+        />
       )}
     </div>
   );

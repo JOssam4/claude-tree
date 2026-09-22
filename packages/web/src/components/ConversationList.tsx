@@ -5,15 +5,21 @@ interface ConversationListProps {
   conversations: ConversationSummaryDTO[];
   selectedSessionId: string | null;
   onSelect: (sessionId: string) => void;
+  onToggleHidden: (sessionId: string, hidden: boolean) => void;
 }
 
 /** List of conversations (root sessions) belonging to a single project; click one to render its tree. */
-export const ConversationList = ({ conversations, selectedSessionId, onSelect }: ConversationListProps) => {
+export const ConversationList = ({ conversations, selectedSessionId, onSelect, onToggleHidden }: ConversationListProps) => {
   return (
     <ul>
       {conversations.map((c) => (
         <li key={c.sessionId}>
-          <Conversation conversation={c} selectedSessionId={selectedSessionId} onSelect={onSelect} />
+          <Conversation
+            conversation={c}
+            selectedSessionId={selectedSessionId}
+            onSelect={onSelect}
+            onToggleHidden={onToggleHidden}
+          />
         </li>
       ))}
     </ul>

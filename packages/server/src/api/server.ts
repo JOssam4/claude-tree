@@ -14,7 +14,7 @@ import { createPtyManager } from "../resume/ptyManager.js";
 import { buildResumeCommand } from "../resume/resumeCommand.js";
 import { forkSessionFromNode } from "../resume/sessionForker.js";
 import { getNodeDetail } from "./nodeDetail.js";
-import { listConversationSummaries, listProjectSummaries } from "./projectQueries.js";
+import { listConversationSummaries, listProjectSummaries, setConversationHidden } from "./projectQueries.js";
 import { buildProjectTree, buildSessionTree } from "./treeBuilder.js";
 
 const UUID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
@@ -38,6 +38,35 @@ export async function createApiServer(db: DB): Promise<ApiServer> {
   // Sidebar's conversation list: one entry per root session across every
   // project (see ConversationSummaryDTO's doc comment for "root").
   app.get("/api/conversations", async () => listConversationSummaries(db));
+
+  // Shows/hides a conversation in the sidebar without touching its data —
+  // purely a display preference persisted in this app's own DB (see
+  // setConversationHidden's doc comment).
+  app.patch<{ Params: { id: string }; Body: { hidden: boolean } }>(
+    "/api/conversations/:id/hidden",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string", pattern: UUID_PATTERN } },
+          required: ["id"],
+        },
+        body: {
+          type: "object",
+          properties: { hidden: { type: "boolean" } },
+          required: ["hidden"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const changed = setConversationHidden(db, request.params.id, request.body.hidden);
+      if (!changed) {
+        reply.code(404);
+        return { error: `session not found: ${request.params.id}` };
+      }
+      return { sessionId: request.params.id, isHidden: request.body.hidden };
+    },
+  );
 
   app.get<{ Params: { id: string } }>(
     "/api/sessions/:id/tree",
