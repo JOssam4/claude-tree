@@ -129,6 +129,43 @@ describe("runBackfill", () => {
     expect(countsAfterSecond).toEqual(countsAfterFirst);
   });
 
+  it("indexes a sidechain whose first line has a dangling parentUuid instead of aborting the whole file", async () => {
+    const mainSessionId = crypto.randomUUID();
+    const agentId = "agent-dangling-parent";
+    const u1 = crypto.randomUUID();
+
+    const mainFilePath = path.join(fixture.projectsDir, slug, `${mainSessionId}.jsonl`);
+    writeJsonlFile(mainFilePath, [
+      chainLine({ uuid: u1, parentUuid: null, type: "user", text: "start", toolUseResultAgentId: agentId }),
+    ]);
+
+    const s1 = crypto.randomUUID();
+    const s2 = crypto.randomUUID();
+    const danglingUuid = crypto.randomUUID(); // never written to any file, on purpose
+    const sidechainPath = path.join(fixture.projectsDir, slug, mainSessionId, "subagents", `agent-${agentId}.jsonl`);
+    writeJsonlFile(sidechainPath, [
+      chainLine({ uuid: s1, parentUuid: danglingUuid, type: "user", text: "lost my real opening line", isSidechain: true }),
+      chainLine({ uuid: s2, parentUuid: s1, type: "assistant", text: "still readable", isSidechain: true }),
+    ]);
+
+    const summary = await runBackfill(db, { projectsDir: fixture.projectsDir });
+    expect(summary.warnings.some((w) => w.includes(danglingUuid))).toBe(true);
+
+    const nodes = db
+      .prepare(`SELECT uuid, parent_uuid as parentUuid FROM nodes WHERE session_id = ? ORDER BY seq`)
+      .all(`agent-${agentId}`) as { uuid: string; parentUuid: string | null }[];
+    expect(nodes).toEqual([
+      { uuid: s1, parentUuid: null }, // fell back to a chain root instead of losing the whole file
+      { uuid: s2, parentUuid: s1 }, // rest of the chain is unaffected
+    ]);
+
+    // still links to its parent conversation via toolUseResult.agentId, not the broken parentUuid
+    const edges = db
+      .prepare(`SELECT source_node_uuid as src, target_session_id as target FROM branch_edges`)
+      .all() as { src: string; target: string }[];
+    expect(edges).toEqual([{ src: u1, target: `agent-${agentId}` }]);
+  });
+
   it("returns an empty-but-successful summary when the projects dir doesn't exist", async () => {
     const summary = await runBackfill(db, { projectsDir: path.join(fixture.homeDir, "no-such-dir") });
     expect(summary.projectsFound).toBe(0);

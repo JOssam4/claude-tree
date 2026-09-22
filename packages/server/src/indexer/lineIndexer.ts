@@ -92,16 +92,40 @@ export function indexRawLine(
     acc.agentIdToNodeUuid.set(parsed.toolUseResultAgentId, parsed.uuid);
   }
 
-  const info = insertNode.run({
+  const baseParams = {
     uuid: parsed.uuid,
     sessionId,
-    parentUuid: parsed.parentUuid,
     type: parsed.type,
     role: parsed.role,
     contentText: parsed.contentText,
     contentRaw: parsed.raw,
     timestamp: parsed.timestamp,
     seq: acc.seq++,
-  });
+  };
+
+  let info: Database.RunResult;
+  try {
+    info = insertNode.run({ ...baseParams, parentUuid: parsed.parentUuid });
+  } catch (err) {
+    // A declared parentUuid can point at a uuid that was never actually
+    // persisted anywhere (seen in practice: a subagent sidechain's first line
+    // with a dangling parentUuid, likely a lost opening line from an
+    // interrupted write — not compaction, which is strictly append-only, see
+    // watcher.ts). Letting the FK violation propagate would abort indexing of
+    // every remaining line in the file. Falling back to a null parent instead
+    // just makes this node a second chain root, the same shape a real
+    // compaction boundary already produces. sidechainLinker.ts never uses
+    // parentUuid to join a sidechain to its parent session, so this doesn't
+    // affect that link either.
+    if (!isForeignKeyError(err) || parsed.parentUuid === null) throw err;
+    acc.warnings.push(
+      `${filePath}:${lineNo}: parent_uuid ${parsed.parentUuid} not found in nodes; inserting as a new chain root`,
+    );
+    info = insertNode.run({ ...baseParams, parentUuid: null });
+  }
   if (info.changes > 0) acc.addedNodeUuids.push(parsed.uuid);
+}
+
+function isForeignKeyError(err: unknown): boolean {
+  return err instanceof Error && "code" in err && (err as { code?: string }).code === "SQLITE_CONSTRAINT_FOREIGNKEY";
 }
