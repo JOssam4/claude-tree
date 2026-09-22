@@ -35,7 +35,7 @@ function groupByProject(conversations: ConversationSummaryDTO[]): ProjectGroup[]
 }
 
 /** Sidebar listing every indexed conversation (root session), grouped by project (working directory); click one to render its tree. */
-export function ProjectList({ conversations, selectedSessionId, onSelect }: ProjectListProps) {
+export const ProjectList = ({ conversations, selectedSessionId, onSelect }: ProjectListProps) => {
   const projectGroups = groupByProject(conversations);
   return (
     <div className="conversation-list">
@@ -52,4 +52,4 @@ export function ProjectList({ conversations, selectedSessionId, onSelect }: Proj
       ))}
     </div>
   );
-}
+};

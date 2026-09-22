@@ -14,7 +14,7 @@ import { TreeCanvas } from './components/TreeCanvas';
 // returning resumeCommand) and render `{terminalBranch && <TerminalPanel .../>}`
 // alongside <TreeCanvas> below.
 
-export function App() {
+export const App = () => {
   const [conversations, setConversations] = useState<ConversationSummaryDTO[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [tree, setTree] = useState<ProjectTreeDTO | null>(null);
@@ -108,4 +108,4 @@ export function App() {
       </main>
     </div>
   );
-}
+};

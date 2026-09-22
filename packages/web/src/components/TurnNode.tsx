@@ -10,7 +10,7 @@ import type { TurnNode as TurnNodeType } from '../tree/turnGraph';
  * has something to hook a click handler / context menu onto without needing
  * to touch this component again.
  */
-export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
+export const TurnNode = ({ id, data }: NodeProps<TurnNodeType>) => {
   const { copied, failed, copy } = useCopyToClipboard();
 
   return (
@@ -78,4 +78,4 @@ export function TurnNode({ id, data }: NodeProps<TurnNodeType>) {
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
-}
+};

@@ -8,7 +8,7 @@ interface ConversationListProps {
 }
 
 /** List of conversations (root sessions) belonging to a single project; click one to render its tree. */
-export function ConversationList({ conversations, selectedSessionId, onSelect }: ConversationListProps) {
+export const ConversationList = ({ conversations, selectedSessionId, onSelect }: ConversationListProps) => {
   return (
     <ul>
       {conversations.map((c) => (
@@ -18,4 +18,4 @@ export function ConversationList({ conversations, selectedSessionId, onSelect }:
       ))}
     </ul>
   );
-}
+};

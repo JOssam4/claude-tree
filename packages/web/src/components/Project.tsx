@@ -10,7 +10,7 @@ interface ProjectProps {
 }
 
 /** One collapsible project group: a header toggling the visibility of its conversation list. */
-export function Project({ projectCwd, conversations, selectedSessionId, onSelect }: ProjectProps) {
+export const Project = ({ projectCwd, conversations, selectedSessionId, onSelect }: ProjectProps) => {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -31,4 +31,4 @@ export function Project({ projectCwd, conversations, selectedSessionId, onSelect
       )}
     </div>
   );
-}
+};

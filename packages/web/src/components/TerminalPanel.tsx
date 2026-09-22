@@ -19,7 +19,7 @@ interface TerminalPanelProps {
  * from tree:update broadcasts by each message's `type` field — see
  * packages/server/src/api/server.ts).
  */
-export function TerminalPanel({ sessionId, resumeCommand, onClose }: TerminalPanelProps) {
+export const TerminalPanel = ({ sessionId, resumeCommand, onClose }: TerminalPanelProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const { copied, failed, copy } = useCopyToClipboard();
 
@@ -106,4 +106,4 @@ export function TerminalPanel({ sessionId, resumeCommand, onClose }: TerminalPan
       <div className="terminal-panel__body" ref={containerRef} />
     </div>
   );
-}
+};

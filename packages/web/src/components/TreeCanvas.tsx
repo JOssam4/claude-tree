@@ -16,7 +16,7 @@ interface TreeCanvasProps {
 }
 
 /** Renders one project's forest: a disconnected xyflow component per root session, dagre-laid-out. */
-export function TreeCanvas({ tree, onCopyResumeCommand }: TreeCanvasProps) {
+export const TreeCanvas = ({ tree, onCopyResumeCommand }: TreeCanvasProps) => {
   // At most one turn expanded at a time — clicking an already-expanded card collapses it back down.
   const [expandedTurnId, setExpandedTurnId] = useState<string | null>(null);
   const onToggleExpand = useCallback((turnId: string) => {
@@ -49,4 +49,4 @@ export function TreeCanvas({ tree, onCopyResumeCommand }: TreeCanvasProps) {
       </ReactFlow>
     </div>
   );
-}
+};
