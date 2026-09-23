@@ -241,6 +241,30 @@ describe("buildForestGraph / fork attachment", () => {
     expect(forkEdge?.source).toBe(`${sessionId}#0`);
   });
 
+  it("draws a continuation as a plain chain edge with no label or session-root badge", () => {
+    const sessionId = "root-sess-cont";
+    const { nodes, uuids } = buildThreeTurnRoot(sessionId);
+    const contSessionId = "cont-sess";
+    const contNode = makeUuid("cu");
+    const fork: SessionForkDTO = {
+      edgeType: "continuation",
+      sourceNodeUuid: uuids.a3,
+      session: makeSessionTree(makeSession(contSessionId), [
+        makeNode({ uuid: contNode, parentUuid: uuids.a3, type: "user", seq: 6, sessionId: contSessionId, text: "carry on" }),
+      ]),
+    };
+    const tree = makeProjectTree([makeSessionTree(makeSession(sessionId), nodes, [fork])]);
+
+    const { nodes: flowNodes, edges } = buildForestGraph(tree);
+    expect(edges.some((e) => e.id.startsWith("fork-"))).toBe(false);
+    const contEdge = edges.find((e) => e.target === `${contSessionId}#0`);
+    expect(contEdge?.source).toBe(`${sessionId}#2`);
+    expect(contEdge?.label).toBeUndefined();
+    expect(contEdge?.className).toBeUndefined();
+    const contTurn = flowNodes.filter(isTurnNode).find((n) => n.id === `${contSessionId}#0`);
+    expect(contTurn?.data.isSessionRoot).toBe(false);
+  });
+
   it("renders nothing at all for a fork whose target session has zero indexed nodes yet", () => {
     const sessionId = "root-sess3";
     const { nodes, uuids } = buildThreeTurnRoot(sessionId);

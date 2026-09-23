@@ -16,6 +16,7 @@ import type { DB } from "../db/client.js";
 import { createAccumulator, indexRawLine, prepareInsertNodeStmt } from "./lineIndexer.js";
 import { parseLine } from "./jsonlParser.js";
 import { linkSidechain, parseAgentIdFromFilename } from "./sidechainLinker.js";
+import { linkContinuation } from "./continuationLinker.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -253,6 +254,12 @@ export async function runBackfill(db: DB, options: BackfillOptions = {}): Promis
         lastIndexedAt: nowIso(),
         lastByteOffset: result.bytesRead,
       });
+    }
+
+    // After ALL of this project's session files are indexed, since readdir
+    // order can put a continuation file before the session it continues.
+    for (const entry of sessionFileEntries) {
+      linkContinuation(db, entry.name.replace(/\.jsonl$/, ""));
     }
 
     for (const containerDir of sidechainContainerDirs) {

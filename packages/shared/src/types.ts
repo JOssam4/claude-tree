@@ -58,7 +58,12 @@ export interface NodeDTO {
   seq: number;
 }
 
-export type BranchEdgeType = "branch" | "subagent";
+/**
+ * "continuation" = Claude Code itself resumed the conversation into a new
+ * session file (see server/src/indexer/continuationLinker.ts) — the same
+ * conversation carrying on, not a fork.
+ */
+export type BranchEdgeType = "branch" | "subagent" | "continuation";
 
 export interface BranchEdgeDTO {
   id: number;

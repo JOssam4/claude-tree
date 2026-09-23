@@ -23,6 +23,7 @@ import type { DB } from "../db/client.js";
 import { indexSessionFile } from "./backfill.js";
 import { tailIndexFile } from "./tailIndexer.js";
 import { linkSidechain, parseAgentIdFromFilename } from "./sidechainLinker.js";
+import { linkContinuation } from "./continuationLinker.js";
 
 /** Trailing debounce per file path for `change` events — Claude Code can write several lines within milliseconds during one turn. */
 const DEBOUNCE_MS = 75;
@@ -218,6 +219,8 @@ async function handleAdd(db: DB, filePath: string, onUpdate: WatcherUpdateFn, lo
 
   if (ctx.isSidechain && ctx.parentSessionId && ctx.agentId) {
     linkSidechainForFile(db, ctx.parentSessionId, ctx.agentId, ctx.sessionId, log);
+  } else if (!ctx.isSidechain) {
+    linkContinuation(db, ctx.sessionId);
   }
 
   for (const w of result.warnings) log(`[watcher] ${w}`);
@@ -304,6 +307,11 @@ async function handleChange(db: DB, filePath: string, onUpdate: WatcherUpdateFn,
 
   if (ctx.isSidechain && ctx.parentSessionId && ctx.agentId) {
     linkSidechainForFile(db, ctx.parentSessionId, ctx.agentId, ctx.sessionId, log);
+  } else if (!ctx.isSidechain) {
+    // A continuation file's copied history can arrive before its first new
+    // line (the one parented into the original session), so keep checking
+    // on tail passes too — cheap, and a no-op once an edge exists.
+    linkContinuation(db, ctx.sessionId);
   }
 
   if (result.addedNodeUuids.length > 0) {

@@ -285,11 +285,22 @@ function buildSessionSubtree(
       continue;
     }
 
-    const child = buildSessionSubtree(fork.session, true, expandedTurnId, onToggleExpand, onCopyResumeCommand);
+    // A continuation is the same conversation carried on in a new session
+    // file, so it reads as the next turn in the chain: plain edge, no label,
+    // no "session root" badge.
+    const isContinuation = fork.edgeType === "continuation";
+    const child = buildSessionSubtree(fork.session, !isContinuation, expandedTurnId, onToggleExpand, onCopyResumeCommand);
     nodes.push(...child.nodes);
     edges.push(...child.edges);
     const childRoot = child.nodes[0];
-    if (childRoot) {
+    if (childRoot && isContinuation) {
+      edges.push({
+        id: `cont-${fork.sourceNodeUuid}-${childRoot.id}`,
+        source: sourceTurnId,
+        target: childRoot.id,
+        type: "smoothstep",
+      });
+    } else if (childRoot) {
       edges.push({
         id: `fork-${fork.sourceNodeUuid}-${childRoot.id}`,
         source: sourceTurnId,
