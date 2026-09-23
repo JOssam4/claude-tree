@@ -39,11 +39,21 @@ export const TurnNode = ({ id, data }: NodeProps<TurnNodeType>) => {
       <Handle type="target" position={Position.Top} />
       {data.isSessionRoot && <div className="turn-node__badge">{data.isSidechain ? 'subagent root' : 'session root'}</div>}
       <div className="turn-node__speaker turn-node__speaker--user">You</div>
-      <div className="turn-node__user">{data.userText ?? <em>(no user message)</em>}</div>
+      <div className="turn-node__user turn-node__markdown">
+        {data.userText ? (
+          data.isExpanded ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.userText}</ReactMarkdown>
+          ) : (
+            data.userText
+          )
+        ) : (
+          <em>(no user message)</em>
+        )}
+      </div>
       {data.assistantText && (
         <>
           <div className="turn-node__speaker turn-node__speaker--assistant">Claude</div>
-          <div className="turn-node__assistant">
+          <div className="turn-node__assistant turn-node__markdown">
             {data.isExpanded ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.assistantText}</ReactMarkdown>
             ) : (
