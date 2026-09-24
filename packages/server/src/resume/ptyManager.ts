@@ -21,6 +21,22 @@ export interface PtyManager {
   handleClientMessage(socket: WebSocket, message: unknown): void;
   /** Kills and forgets every pty this socket owns — call on WS 'close'/'error'. */
   handleSocketClosed(socket: WebSocket): void;
+  /**
+   * Kills every live pty across all sockets, synchronously. Call before the
+   * process exits: node-pty joins a per-child waiter thread during teardown,
+   * so a still-running child would otherwise hang Electron's exit.
+   */
+  killAll(): void;
+}
+
+function killEach(ptys: Iterable<pty.IPty>): void {
+  for (const p of ptys) {
+    try {
+      p.kill();
+    } catch {
+      // Already exited — fine.
+    }
+  }
 }
 
 function getSessionProjectCwd(db: DB, sessionId: string): string | null {
@@ -152,14 +168,12 @@ export function createPtyManager(db: DB, log: PtyLogFn = console.log): PtyManage
     handleSocketClosed(socket) {
       const sockets = ptysBySocket.get(socket);
       if (!sockets) return;
-      for (const p of sockets.values()) {
-        try {
-          p.kill();
-        } catch {
-          // Already exited — fine.
-        }
-      }
+      killEach(sockets.values());
       ptysBySocket.delete(socket);
+    },
+    killAll() {
+      for (const sockets of ptysBySocket.values()) killEach(sockets.values());
+      ptysBySocket.clear();
     },
   };
 }

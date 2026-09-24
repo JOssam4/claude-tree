@@ -5,10 +5,13 @@
  *
  * Local single-user tool, per the plan: binds to 127.0.0.1 only, no auth.
  */
+import fs from "node:fs";
+import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type WebSocket from "ws";
 import type { TreeUpdateEvent, WsServerMessage } from "@claude-tree/shared";
+import { WEB_DIST_DIR } from "../config.js";
 import type { DB } from "../db/client.js";
 import { createPtyManager } from "../resume/ptyManager.js";
 import { buildResumeCommand } from "../resume/resumeCommand.js";
@@ -27,9 +30,21 @@ export interface ApiServer {
   close(): Promise<void>;
 }
 
-export async function createApiServer(db: DB): Promise<ApiServer> {
+export async function createApiServer(db: DB, webDistDir: string = WEB_DIST_DIR): Promise<ApiServer> {
   const app = Fastify({ logger: true });
   await app.register(fastifyWebsocket);
+
+  // Serves the built packages/web frontend so Electron can `loadURL` a real
+  // http:// origin (needed for the app's absolute /assets/... paths and
+  // window.location-derived API/WS calls to work) instead of file://. Guarded
+  // by existence so the plain dev workflow (Vite dev server proxying to this
+  // API, never hitting this route) keeps working on a fresh checkout before
+  // `packages/web` has ever been built.
+  if (fs.existsSync(webDistDir)) {
+    await app.register(fastifyStatic, { root: webDistDir });
+  } else {
+    app.log.warn(`[static] ${webDistDir} not found — web UI will not be served here (Vite dev proxy mode?)`);
+  }
 
   const clients = new Set<WebSocket>();
 
@@ -222,6 +237,9 @@ export async function createApiServer(db: DB): Promise<ApiServer> {
       await app.listen({ port, host: "127.0.0.1" });
     },
     async close() {
+      // Synchronous, before closing sockets: socket 'close' events (which also
+      // kill ptys) fire asynchronously and aren't awaited here.
+      ptyManager.killAll();
       for (const client of clients) client.close();
       await app.close();
     },

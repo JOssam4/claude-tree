@@ -28,11 +28,22 @@ export const CLAUDE_PROJECTS_DIR = path.join(CLAUDE_HOME, "projects");
 /** Root of this repo's server package (…/packages/server), used to anchor our own writable paths. */
 export const SERVER_ROOT = path.resolve(__dirname, "..");
 
-/** This app's own SQLite database. All writes from this app go here, never under CLAUDE_HOME. */
+/**
+ * Default location of this app's own SQLite database (CLI/dev). All writes
+ * from this app go to its DB, never under CLAUDE_HOME. Electron passes its own
+ * per-OS user-data path via startClaudeTreeServer's `dbPath` option instead.
+ */
 export const DB_DIR = path.join(SERVER_ROOT, "data");
 export const DB_PATH = path.join(DB_DIR, "tree.db");
 
 export const SCHEMA_SQL_PATH = path.join(__dirname, "db", "schema.sql");
+
+/**
+ * Default location of the built `packages/web` assets served at `/` (monorepo
+ * layout). A packaged Electron build copies them elsewhere and passes that
+ * path via startClaudeTreeServer's `webDistDir` option instead.
+ */
+export const WEB_DIST_DIR = path.resolve(SERVER_ROOT, "../web/dist");
 
 /** HTTP/WS server port. Local-only tool — no auth, override via env if 4317 collides with something else. */
 export const HTTP_PORT = Number(process.env.CLAUDE_TREE_PORT ?? 4317);

@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import path from "node:path";
 import Database from "better-sqlite3";
-import { DB_DIR, DB_PATH, SCHEMA_SQL_PATH } from "../config.js";
+import { DB_PATH, SCHEMA_SQL_PATH } from "../config.js";
 
 export type DB = Database.Database;
 
@@ -18,7 +19,7 @@ export type DB = Database.Database;
  * replace this later without changing the call site.
  */
 export function openDb(dbPath: string = DB_PATH): DB {
-  fs.mkdirSync(DB_DIR, { recursive: true });
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");

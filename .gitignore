@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.log
 packages/server/data/
+packages/electron/release/
 .dev-screenshots/
 .DS_Store
 /.idea/

@@ -7,8 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace packages/shared && npm run build --workspace packages/server && npm run build --workspace packages/web",
+    "build": "npm run build --workspace packages/shared && npm run build --workspace packages/server && npm run build --workspace packages/web && npm run build --workspace packages/electron",
     "backfill": "npm run backfill --workspace packages/server",
+    "electron:dev": "npm run build --workspace packages/shared && npm run build --workspace packages/server && npm run build --workspace packages/web && npm run dev --workspace packages/electron",
+    "electron:package": "npm run build && npm run package --workspace packages/electron",
     "test": "vitest run"
   },
   "engines": {
