@@ -43,6 +43,10 @@ if (!gotLock) {
       width: 1280,
       height: 800,
       show: false,
+      // The default File/Edit/View menu bar is native chrome that ignores the
+      // web UI's light/dark toggle, so keep it out of sight. Its keyboard
+      // shortcuts still work, and Alt reveals it on Windows/Linux.
+      autoHideMenuBar: true,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
