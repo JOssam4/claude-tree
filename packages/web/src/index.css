@@ -8,8 +8,10 @@ body,
   margin: 0;
 }
 
+/* useTheme sets data-theme on <html> to "light" or "dark" (the OS setting
+   until the user picks one with the sidebar toggle). */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   --color-bg: #f4f5f7;
   --color-text: #1a1a1a;
@@ -45,41 +47,41 @@ body,
   --color-edge-subagent: #9b59d0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #17181c;
-    --color-text: #e4e4e7;
-    --color-accent: #7c8cf0;
-    --color-border: #34353b;
-    --color-muted: #9a9aa5;
-    --color-muted-2: #8a8a94;
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-    --color-sidebar-bg: #1e1f24;
+  --color-bg: #17181c;
+  --color-text: #e4e4e7;
+  --color-accent: #7c8cf0;
+  --color-border: #34353b;
+  --color-muted: #9a9aa5;
+  --color-muted-2: #8a8a94;
 
-    --color-error-bg: #3a1f1f;
-    --color-error-border: #7a3a3a;
-    --color-error-text: #ff8080;
+  --color-sidebar-bg: #1e1f24;
 
-    --color-item-bg: #26272c;
-    --color-item-border: #34353b;
-    --color-item-hover-bg: #262a3d;
-    --color-item-active-bg: #2b3050;
+  --color-error-bg: #3a1f1f;
+  --color-error-border: #7a3a3a;
+  --color-error-text: #ff8080;
 
-    --color-node-bg: #1e1f24;
-    --color-node-border: #3a3b42;
-    --color-node-shadow: rgba(0, 0, 0, 0.4);
-    --color-node-expanded-shadow: rgba(0, 0, 0, 0.55);
-    --color-sidechain-bg: #24202b;
-    --color-assistant-text: #c7c7cf;
-    --color-assistant-border: #c9944a;
-    --color-speaker-assistant: #e0a749;
+  --color-item-bg: #26272c;
+  --color-item-border: #34353b;
+  --color-item-hover-bg: #262a3d;
+  --color-item-active-bg: #2b3050;
 
-    --color-copy-btn-bg: #262a3d;
-    --color-copy-btn-hover-bg: #323756;
+  --color-node-bg: #1e1f24;
+  --color-node-border: #3a3b42;
+  --color-node-shadow: rgba(0, 0, 0, 0.4);
+  --color-node-expanded-shadow: rgba(0, 0, 0, 0.55);
+  --color-sidechain-bg: #24202b;
+  --color-assistant-text: #c7c7cf;
+  --color-assistant-border: #c9944a;
+  --color-speaker-assistant: #e0a749;
 
-    --color-edge-branch: #f0a875;
-    --color-edge-subagent: #b47de0;
-  }
+  --color-copy-btn-bg: #262a3d;
+  --color-copy-btn-hover-bg: #323756;
+
+  --color-edge-branch: #f0a875;
+  --color-edge-subagent: #b47de0;
 }
 
 body {
@@ -94,12 +96,35 @@ body {
 }
 
 .app__sidebar {
+  position: relative;
   width: 20rem;
   flex-shrink: 0;
   overflow-y: auto;
   border-right: 0.0625rem solid var(--color-border);
   background: var(--color-sidebar-bg);
   padding: 0.75rem;
+}
+
+.app__theme-toggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  border-radius: 0.25rem;
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.app__theme-toggle:hover {
+  background: var(--color-item-hover-bg);
+  color: var(--color-text);
 }
 
 .app__main {

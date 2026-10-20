@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMoon, faSun } from '@fortawesome/free-solid-svg-icons';
 import type { BranchResponseDTO, ConversationSummaryDTO, ProjectTreeDTO } from '@claude-tree/shared';
 import { branchFromNode, getConversations, getSessionTree, setConversationHidden } from './api/client';
 import { useTreeUpdates } from './api/useTreeUpdates';
 import { ProjectList } from './components/ProjectList';
 import { TreeCanvas } from './components/TreeCanvas';
+import { useTheme } from './hooks/useTheme';
 
 // There used to be a "⑂ branch" action here too (a `terminalBranch` state +
 // `handleBranch` callback + `<TerminalPanel>` render, wired to a node's now-removed
@@ -19,6 +22,7 @@ export const App = () => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [tree, setTree] = useState<ProjectTreeDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { theme, toggleTheme } = useTheme();
 
   // Milestone 8: caches one branch call per source node uuid for this session's
   // lifetime, so repeated '⧉ copy resume command' clicks for the same node fork
@@ -105,6 +109,15 @@ export const App = () => {
   return (
     <div className="app">
       <aside className="app__sidebar">
+        <button
+          type="button"
+          className="app__theme-toggle"
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          onClick={toggleTheme}
+        >
+          <FontAwesomeIcon icon={theme === 'dark' ? faSun : faMoon} />
+        </button>
         <ProjectList
           conversations={conversations}
           selectedSessionId={selectedSessionId}
@@ -116,7 +129,7 @@ export const App = () => {
         {error && <div className="app__error">{error}</div>}
         {!selectedSessionId && <div className="tree-canvas__empty">Select a conversation to view its tree.</div>}
         {selectedSessionId && tree && (
-          <TreeCanvas tree={tree} onCopyResumeCommand={handleCopyResumeCommand} key={selectedSessionId} />
+          <TreeCanvas tree={tree} theme={theme} onCopyResumeCommand={handleCopyResumeCommand} key={selectedSessionId} />
         )}
       </main>
     </div>

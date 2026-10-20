@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { ProjectTreeDTO } from '@claude-tree/shared';
+import type { Theme } from '../hooks/useTheme';
 import { buildForestGraph } from '../tree/turnGraph';
 import { TurnNode } from './TurnNode';
 
@@ -11,12 +12,13 @@ const nodeTypes: NodeTypes = {
 
 interface TreeCanvasProps {
   tree: ProjectTreeDTO;
+  theme: Theme;
   /** Milestone 8: called with a turn's targetNodeUuid when its "⧉ copy resume command" button is clicked. */
   onCopyResumeCommand: (targetNodeUuid: string) => Promise<string | null>;
 }
 
 /** Renders one project's forest: a disconnected xyflow component per root session, dagre-laid-out. */
-export const TreeCanvas = ({ tree, onCopyResumeCommand }: TreeCanvasProps) => {
+export const TreeCanvas = ({ tree, theme, onCopyResumeCommand }: TreeCanvasProps) => {
   // At most one turn expanded at a time — clicking an already-expanded card collapses it back down.
   const [expandedTurnId, setExpandedTurnId] = useState<string | null>(null);
   const onToggleExpand = useCallback((turnId: string) => {
@@ -41,7 +43,7 @@ export const TreeCanvas = ({ tree, onCopyResumeCommand }: TreeCanvasProps) => {
         fitView
         minZoom={0.05}
         proOptions={{ hideAttribution: true }}
-        colorMode="system"
+        colorMode={theme}
       >
         <Background />
         <Controls />
