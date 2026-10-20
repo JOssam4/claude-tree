@@ -6,9 +6,14 @@ A conversation tree manager for [Claude Code](https://claude.com/claude-code). I
 - **Branch from any point** — click a turn to fork the conversation up to that point into a new session, and copy a ready-to-run `claude --resume ...` command to paste into your own terminal.
 - **Non-destructive** — branching always creates a brand-new session file. The conversation you branched from is never modified, so you can always get back to it.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img alt="Claude Tree showing a conversation that branches into several forks" src="docs/screenshot-light.png">
+</picture>
+
 ## Prerequisites
 
-- Node.js 22+ (this repo is pinned via [Volta](https://volta.sh/); if you have Volta installed, the right Node version is picked up automatically)
+- Node.js 22+ (the exact version used for development is pinned in the root `package.json`)
 - An existing `claude` CLI install, reachable on `PATH` (used both for indexing your conversation history and for the resume/branch feature)
 
 ## Getting started
@@ -32,6 +37,20 @@ npm run dev --workspace packages/web
 Open the URL Vite prints (typically `http://localhost:5173`). You should see a project list on the left; pick one to see its conversation forest.
 
 For iterating on the backend itself, `npm run dev --workspace packages/server` runs it directly from source via `tsx` instead of the compiled build.
+
+### Desktop app
+
+Claude Tree can also run as an Electron desktop app, which starts the backend in-process and serves the built frontend from it — no separate terminals needed.
+
+```bash
+# Build everything and launch the desktop app from source
+npm run electron:dev
+
+# Build installers for the current platform into packages/electron/release/
+npm run electron:package
+```
+
+Packaging produces a `.dmg`/`.zip` on macOS, an AppImage and `.deb` on Linux, and an NSIS installer on Windows. The desktop app keeps its database in the platform's per-user app data directory, and only one instance runs at a time (launching it again focuses the existing window).
 
 ### Branching
 
@@ -59,11 +78,12 @@ packages/
   shared/   — DTOs shared between server and web
   server/   — indexer (backfill + live file watching), SQLite DB, REST/WebSocket API, branch/resume logic
   web/      — React + @xyflow/react frontend
+  electron/ — desktop app shell that runs the server in-process and opens the UI in a window
 ```
 
 ## Configuration
 
-- `CLAUDE_TREE_PORT` — override the backend's port (default `4317`)
+- `CLAUDE_TREE_PORT` — override the backend's port (default `4317`); also respected by the desktop app
 
 ## Known limitations
 
