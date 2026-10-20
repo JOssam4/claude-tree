@@ -2,6 +2,9 @@
   "name": "@claude-tree/electron",
   "productName": "Claude Tree",
   "version": "0.1.0",
+  "description": "Claude Code Conversation Tree Manager",
+  "author": "James Ossam <jamesossam@gmail.com>",
+  "homepage": "https://github.com/JOssam4/claude-tree",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -79,6 +82,9 @@
         }
       ],
       "category": "Development"
+    },
+    "deb": {
+      "artifactName": "claude-tree_${version}_${arch}.${ext}"
     },
     "win": {
       "target": [
