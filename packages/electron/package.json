@@ -26,7 +26,6 @@
   "build": {
     "appId": "com.claudetree.app",
     "productName": "Claude Tree",
-    "executableName": "claude-tree",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -47,6 +46,7 @@
     ],
     "mac": {
       "identity": "-",
+      "hardenedRuntime": false,
       "target": [
         {
           "target": "dmg",
@@ -66,6 +66,7 @@
       "category": "public.app-category.developer-tools"
     },
     "linux": {
+      "executableName": "claude-tree",
       "target": [
         "AppImage",
         "deb"
