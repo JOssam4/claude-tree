@@ -1,0 +1,138 @@
+name: Build desktop apps
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    # Path filters only apply to branch pushes; tag pushes always build.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "*.png"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A newer push to main supersedes an in-progress build; release builds always finish.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 keeps the glibc requirement of the compiled node-pty low.
+          - name: linux-x64
+            runner: ubuntu-22.04
+            builder-args: --linux --x64
+          - name: linux-arm64
+            runner: ubuntu-22.04-arm
+            builder-args: --linux --arm64
+          # One Apple Silicon runner builds both mac architectures.
+          - name: mac
+            runner: macos-latest
+            builder-args: --mac
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(node -p "require('./packages/electron/package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match packages/electron/package.json version $version"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Test
+        if: matrix.name == 'linux-x64'
+        run: npm test
+
+      - run: npm run build
+
+      # electron-builder's bundled fpm (used for .deb) only runs on x64 hosts.
+      - name: Install fpm
+        if: matrix.name == 'linux-arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev
+          sudo gem install --no-document fpm
+          echo "USE_SYSTEM_FPM=true" >> "$GITHUB_ENV"
+
+      - name: Package
+        working-directory: packages/electron
+        env:
+          # Builds are ad-hoc signed (mac.identity "-") for now; don't pick up stray certificates.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.builder-args }} --publish never
+
+      - name: Check native module architectures (Linux)
+        if: runner.os == 'Linux'
+        working-directory: packages/electron/release
+        run: |
+          if [ "${{ matrix.name }}" = linux-x64 ]; then
+            ../../../.github/scripts/check-native-arch.sh linux-unpacked/resources/app.asar.unpacked x86-64
+          else
+            ../../../.github/scripts/check-native-arch.sh linux-arm64-unpacked/resources/app.asar.unpacked aarch64
+          fi
+
+      - name: Check native module architectures and signatures (mac)
+        if: runner.os == 'macOS'
+        working-directory: packages/electron/release
+        run: |
+          ../../../.github/scripts/check-native-arch.sh "mac/Claude Tree.app/Contents/Resources/app.asar.unpacked" x86_64
+          ../../../.github/scripts/check-native-arch.sh "mac-arm64/Claude Tree.app/Contents/Resources/app.asar.unpacked" arm64
+          # Apple Silicon refuses to launch apps without at least an ad-hoc signature.
+          codesign --verify --deep --strict --verbose=2 "mac/Claude Tree.app"
+          codesign --verify --deep --strict --verbose=2 "mac-arm64/Claude Tree.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-tree-${{ matrix.name }}
+          path: |
+            packages/electron/release/*.dmg
+            packages/electron/release/*.zip
+            packages/electron/release/*.AppImage
+            packages/electron/release/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la dist
+          # Create the release with its assets in one step so it never goes live empty;
+          # a rerun for an existing release just replaces the assets.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          fi
