@@ -129,6 +129,24 @@ describe("listConversationSummaries", () => {
     expect(rows[0]?.lastActivityAt).toBe(rows[0]?.createdAt);
   });
 
+  it("omits subagent sidechain sessions that were never linked to a parent", () => {
+    const projectId = insertProject(db, "-tmp-orphan-sidechain");
+    const root = uuid();
+    insertSession(db, root, projectId, "2026-01-01T00:00:00Z");
+    insertNode(db, uuid(), root, null, 0, "2026-01-01T00:00:00Z");
+
+    // No branch_edges row targets this sidechain, so it would otherwise count as a root.
+    const orphanSidechain = "agent-a900a6ae610d93259";
+    db.prepare(
+      `INSERT INTO sessions (id, project_id, file_path, is_sidechain, agent_id, ai_title, created_at, last_indexed_at, last_byte_offset, is_synthetic)
+       VALUES (?, ?, ?, 1, 'a900a6ae610d93259', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 0, 0)`,
+    ).run(orphanSidechain, projectId, `/tmp/fake/${root}/subagents/${orphanSidechain}.jsonl`);
+    insertNode(db, uuid(), orphanSidechain, null, 0, "2026-01-05T00:00:00Z");
+
+    const rows = listConversationSummaries(db);
+    expect(rows.map((r) => r.sessionId)).toEqual([root]);
+  });
+
   it("does not hang on a synthetic branch_edges cycle", () => {
     const projectId = insertProject(db, "-tmp-cycle");
     const sessionA = uuid();

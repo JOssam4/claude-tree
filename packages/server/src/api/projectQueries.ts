@@ -25,6 +25,7 @@ export function listProjectSummaries(db: DB): ProjectSummaryDTO[] {
          (SELECT COUNT(*) FROM sessions s
             WHERE s.project_id = p.id
               AND NOT EXISTS (SELECT 1 FROM branch_edges be WHERE be.target_session_id = s.id)
+              AND s.is_sidechain = 0
          ) as rootSessionCount
        FROM projects p
        ORDER BY p.last_seen_at DESC`,
@@ -47,6 +48,12 @@ export function listProjectSummaries(db: DB): ProjectSummaryDTO[] {
  * relation to when the underlying conversation actually last had a message).
  * Falls back to the root's own created_at only for the (edge-case) root with
  * zero nodes anywhere in its tree yet, e.g. mid-backfill.
+ *
+ * Subagent sidechain sessions are never listed, even when the sidechain linker
+ * couldn't attach them to a parent (e.g. a background forked-skill agent like
+ * `/code-review`, which has no Task tool result carrying its agentId). They
+ * aren't something a user would resume, and their `agent-<id>` session ids
+ * don't satisfy the UUID-only /api/sessions/:id/tree route anyway.
  *
  * The recursive walk uses plain UNION (not UNION ALL) so a synthetic
  * branch_edges cycle (see treeBuilder.ts's cycle guard) can't loop forever:
@@ -89,6 +96,7 @@ export function listConversationSummaries(db: DB): ConversationSummaryDTO[] {
        JOIN projects p ON p.id = s.project_id
        JOIN tree_activity ta ON ta.rootId = s.id
        WHERE NOT EXISTS (SELECT 1 FROM branch_edges be WHERE be.target_session_id = s.id)
+         AND s.is_sidechain = 0
        ORDER BY COALESCE(ta.lastActivityAt, s.created_at) DESC`,
     )
     .all() as ConversationSummaryRow[];
