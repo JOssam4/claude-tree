@@ -68,6 +68,8 @@ export async function startClaudeTreeServer(options: StartServerOptions = {}): P
 
   log(`[startup] watcher running, watching ${CLAUDE_PROJECTS_DIR}/**/*.jsonl`);
 
+  // Runs its first sweep inline, before listen() below, so stale conversations
+  // (session files Claude Code has since deleted) are gone before the UI loads.
   const pruneHandle = startPruneJob(db, {}, log);
 
   await api.listen(port);

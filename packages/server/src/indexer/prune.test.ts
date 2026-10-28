@@ -6,7 +6,7 @@ import { openDb, type DB } from "../db/client.js";
 import { chainLine, aiTitleLine, writeJsonlFile } from "../test/fixtures.js";
 import { createFixtureClaudeHome, type FixtureClaudeHome } from "../test/tempHome.js";
 import { runBackfill } from "./backfill.js";
-import { pruneStaleSessions } from "./prune.js";
+import { pruneStaleSessions, startPruneJob } from "./prune.js";
 
 // pruneStaleSessions checks fs.existsSync against sessions.file_path directly
 // (no directory override needed, unlike runBackfill's projectsDir option), so
@@ -170,5 +170,22 @@ describe("pruneStaleSessions", () => {
     expect(summary.sessionsPruned).toBe(1);
     expect(summary.projectsPruned).toBe(0);
     expect(projectCount()).toBe(1);
+  });
+
+  it("startPruneJob prunes stale sessions before returning, without waiting for a timer", async () => {
+    const { filePath: keepPath } = writeSimpleSession(`${crypto.randomUUID()}.jsonl`);
+    const { filePath: deletePath } = writeSimpleSession(`${crypto.randomUUID()}.jsonl`);
+    await runBackfill(db, { projectsDir: fixture.projectsDir });
+    fs.unlinkSync(deletePath);
+
+    const logs: string[] = [];
+    const handle = startPruneJob(db, {}, (m) => logs.push(m));
+    try {
+      const remaining = db.prepare(`SELECT file_path as filePath FROM sessions`).all() as { filePath: string }[];
+      expect(remaining).toEqual([{ filePath: keepPath }]);
+      expect(logs.some((m) => m.includes("removed 1 stale sessions"))).toBe(true);
+    } finally {
+      await handle.close();
+    }
   });
 });

@@ -92,21 +92,31 @@ export interface PruneJobHandle {
 
 export interface StartPruneJobOptions extends PruneOptions {
   intervalMs?: number;
-  /** Delay before the first sweep; kept short (not a full day) so a freshly restarted server doesn't wait 24h for its first prune. */
-  initialDelayMs?: number;
 }
 
-/** Runs pruneStaleSessions once shortly after startup, then on a daily interval, until close() is called. */
+/**
+ * Runs pruneStaleSessions once synchronously before returning, then on a
+ * daily interval until close() is called. The first sweep is synchronous so
+ * that, called before the API starts listening, the UI never sees
+ * conversations whose files Claude Code has already deleted.
+ */
 export function startPruneJob(
   db: DB,
   options: StartPruneJobOptions = {},
   log: PruneLogFn = console.log,
 ): PruneJobHandle {
   const intervalMs = options.intervalMs ?? PRUNE_INTERVAL_MS;
-  const initialDelayMs = options.initialDelayMs ?? 5000;
 
   function runSweep(): void {
-    const summary = pruneStaleSessions(db, options);
+    let summary: PruneSummary;
+    try {
+      summary = pruneStaleSessions(db, options);
+    } catch (err) {
+      // Must never take down startup (the first sweep runs inline there);
+      // the next interval sweep will retry.
+      log(`[prune warning] sweep failed: ${(err as Error).message}`);
+      return;
+    }
     if (summary.sessionsPruned > 0 || summary.warnings.length > 0) {
       log(
         `[prune] removed ${summary.sessionsPruned} stale sessions, ${summary.nodesPruned} nodes, ` +
@@ -117,12 +127,11 @@ export function startPruneJob(
     for (const w of summary.warnings) log(`[prune warning] ${w}`);
   }
 
-  const initialTimer = setTimeout(runSweep, initialDelayMs);
+  runSweep();
   const interval = setInterval(runSweep, intervalMs);
 
   return {
     async close() {
-      clearTimeout(initialTimer);
       clearInterval(interval);
     },
   };
