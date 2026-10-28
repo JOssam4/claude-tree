@@ -47,6 +47,13 @@ if (!gotLock) {
       // web UI's light/dark toggle, so keep it out of sight. Its keyboard
       // shortcuts still work, and Alt reveals it on Windows/Linux.
       autoHideMenuBar: true,
+      // On macOS, drop the native title bar so the sidebar runs to the top of
+      // the window with the traffic lights floating over it. The web UI pads
+      // around them and provides a drag region (see .mac-shell in index.css).
+      ...(process.platform === "darwin" && {
+        titleBarStyle: "hidden" as const,
+        trafficLightPosition: { x: 16, y: 16 },
+      }),
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

@@ -127,6 +127,28 @@ body {
   color: var(--color-text);
 }
 
+/* Electron on macOS: no native title bar, so clear the traffic lights
+   (positioned by trafficLightPosition in electron/src/main.ts) and make the
+   top of the sidebar draggable. Limited to the sidebar so it doesn't swallow
+   clicks on the canvas or the terminal panel header. */
+.mac-shell .app__sidebar {
+  padding-top: 2.75rem;
+}
+.mac-shell .app::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 20rem;
+  height: 2.75rem;
+  -webkit-app-region: drag;
+  z-index: 1;
+}
+.mac-shell .app__theme-toggle {
+  z-index: 2;
+  -webkit-app-region: no-drag;
+}
+
 .app__main {
   flex: 1;
   min-width: 0;
