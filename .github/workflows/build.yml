@@ -4,24 +4,66 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-    # Path filters only apply to branch pushes; tag pushes always build.
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "*.png"
+    # Path filters only apply to branch pushes; tag pushes always run. On main,
+    # only a change to the app's package.json can be a version bump, and the
+    # version job then checks that it really is one.
+    paths:
+      - packages/electron/package.json
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A newer push to main supersedes an in-progress build; release builds always finish.
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  # Every run that builds may publish a release, so let each one finish.
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  # Decides whether to build and which tag (if any) to release:
+  # - a pushed v* tag builds and releases that tag;
+  # - main builds and releases only when its packages/electron version hasn't
+  #   been tagged yet (the release job then creates the tag);
+  # - a manual run always builds, releasing only under the same rule as main.
+  version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      tag: ${{ steps.decide.outputs.tag }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: packages/electron/package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Decide
+        id: decide
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+          [ "$GITHUB_REF" = refs/heads/main ] || exit 0
+          tag="v$(node -p "require('./packages/electron/package.json').version")"
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" > /dev/null 2>&1; then
+            echo "$tag is already tagged; nothing to release"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Build (${{ matrix.name }})
+    needs: version
+    if: needs.version.outputs.build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -112,8 +154,8 @@ jobs:
 
   release:
     name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [version, build]
+    if: needs.version.outputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -127,12 +169,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           ls -la dist
           # Create the release with its assets in one step so it never goes live empty;
-          # a rerun for an existing release just replaces the assets.
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          # a rerun for an existing release just replaces the assets. For a missing
+          # tag, --target creates it at the commit that was built. Tags created with
+          # GITHUB_TOKEN don't trigger workflows, so this doesn't kick off a rebuild.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+            gh release create "$TAG" dist/* --title "$TAG" --target "$GITHUB_SHA" --generate-notes
           fi
