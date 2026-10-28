@@ -58,6 +58,12 @@ export interface ChainLineRecord {
   toolUseResultAgentId: string | null;
   /** The working directory Claude Code was run from when this line was written, when present. Used to populate `projects.cwd` from real data. */
   cwd: string | null;
+  /**
+   * Claude Code's `isMeta` flag: the line was injected by Claude Code itself
+   * (e.g. the `<local-command-caveat>` note written before a slash command),
+   * not typed by the user.
+   */
+  isMeta: boolean;
   raw: string;
 }
 
@@ -155,6 +161,7 @@ export function parseLine(rawLine: string): ParsedLine {
     agentId: typeof data.agentId === "string" ? data.agentId : null,
     toolUseResultAgentId,
     cwd: typeof data.cwd === "string" ? data.cwd : null,
+    isMeta: data.isMeta === true,
     raw: trimmed,
   };
 }

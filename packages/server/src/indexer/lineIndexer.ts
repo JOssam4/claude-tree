@@ -84,7 +84,9 @@ export function indexRawLine(
   // parsed.kind === "chain"
   if (acc.createdAt === null) acc.createdAt = parsed.timestamp || nowIso();
   if (acc.cwd === null && parsed.cwd) acc.cwd = parsed.cwd;
-  if (acc.titleFallback === null && parsed.type === "user" && parsed.contentText) {
+  // Skip isMeta lines so a session that opens with a slash command is titled
+  // by the command the user typed, not Claude Code's injected caveat note.
+  if (acc.titleFallback === null && parsed.type === "user" && !parsed.isMeta && parsed.contentText) {
     acc.titleFallback = parsed.contentText.slice(0, TITLE_FALLBACK_MAX_LEN);
   }
   // See sidechainLinker.ts: undocumented join key for Task subagent sidechains.

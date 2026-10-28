@@ -166,6 +166,29 @@ describe("runBackfill", () => {
     expect(edges).toEqual([{ src: u1, target: `agent-${agentId}` }]);
   });
 
+  it("falls back to the first non-meta user message for the title when there's no ai-title line", async () => {
+    const sessionId = crypto.randomUUID();
+    const u1 = crypto.randomUUID();
+    const u2 = crypto.randomUUID();
+    writeJsonlFile(path.join(fixture.projectsDir, slug, `${sessionId}.jsonl`), [
+      chainLine({
+        uuid: u1,
+        parentUuid: null,
+        type: "user",
+        text: "<local-command-caveat>The command below was run directly in Claude Code</local-command-caveat>",
+        extra: { isMeta: true },
+      }),
+      chainLine({ uuid: u2, parentUuid: u1, type: "user", text: "/code-review high. Verify I didn't leave any hanging files" }),
+    ]);
+
+    await runBackfill(db, { projectsDir: fixture.projectsDir });
+
+    const session = db.prepare(`SELECT ai_title as aiTitle FROM sessions WHERE id = ?`).get(sessionId) as {
+      aiTitle: string | null;
+    };
+    expect(session.aiTitle).toBe("/code-review high. Verify I didn't leave any hanging files");
+  });
+
   it("returns an empty-but-successful summary when the projects dir doesn't exist", async () => {
     const summary = await runBackfill(db, { projectsDir: path.join(fixture.homeDir, "no-such-dir") });
     expect(summary.projectsFound).toBe(0);
