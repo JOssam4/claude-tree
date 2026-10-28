@@ -91,7 +91,8 @@ export function listConversationSummaries(db: DB): ConversationSummaryDTO[] {
          s.created_at as createdAt,
          s.last_indexed_at as lastIndexedAt,
          COALESCE(ta.lastActivityAt, s.created_at) as lastActivityAt,
-         s.hidden as isHidden
+         s.hidden as isHidden,
+         s.custom_title as customTitle
        FROM sessions s
        JOIN projects p ON p.id = s.project_id
        JOIN tree_activity ta ON ta.rootId = s.id
@@ -111,5 +112,17 @@ export function listConversationSummaries(db: DB): ConversationSummaryDTO[] {
  */
 export function setConversationHidden(db: DB, sessionId: string, hidden: boolean): boolean {
   const result = db.prepare(`UPDATE sessions SET hidden = ? WHERE id = ?`).run(hidden ? 1 : 0, sessionId);
+  return result.changes > 0;
+}
+
+/**
+ * Sets (or, with null or a blank string, clears) the user-set name of a
+ * conversation's root session, backing PATCH /api/conversations/:id/title.
+ * Like the hidden flag, a display-only preference the indexer never
+ * overwrites. Returns false if no session with that id exists.
+ */
+export function setConversationTitle(db: DB, sessionId: string, title: string | null): boolean {
+  const trimmed = title?.trim() || null;
+  const result = db.prepare(`UPDATE sessions SET custom_title = ? WHERE id = ?`).run(trimmed, sessionId);
   return result.changes > 0;
 }

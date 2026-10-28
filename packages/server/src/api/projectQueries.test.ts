@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type DB } from "../db/client.js";
-import { listConversationSummaries, setConversationHidden } from "./projectQueries.js";
+import { listConversationSummaries, setConversationHidden, setConversationTitle } from "./projectQueries.js";
 
 // listConversationSummaries only ever queries `db` (this app's own SQLite
 // DB), so these tests build rows directly via raw SQL against an in-memory
@@ -178,5 +178,25 @@ describe("listConversationSummaries", () => {
     expect(listConversationSummaries(db)[0]?.isHidden).toBe(false);
 
     expect(setConversationHidden(db, "does-not-exist", true)).toBe(false);
+  });
+
+  it("defaults customTitle to null and reflects setConversationTitle, clearing on blank", () => {
+    const projectId = insertProject(db, "-tmp-title");
+    const sessionId = uuid();
+    insertSession(db, sessionId, projectId, "2026-01-01T00:00:00Z");
+
+    expect(listConversationSummaries(db)[0]?.customTitle).toBeNull();
+
+    expect(setConversationTitle(db, sessionId, "  My renamed conversation  ")).toBe(true);
+    expect(listConversationSummaries(db)[0]?.customTitle).toBe("My renamed conversation");
+
+    expect(setConversationTitle(db, sessionId, "   ")).toBe(true);
+    expect(listConversationSummaries(db)[0]?.customTitle).toBeNull();
+
+    expect(setConversationTitle(db, sessionId, "Renamed again")).toBe(true);
+    expect(setConversationTitle(db, sessionId, null)).toBe(true);
+    expect(listConversationSummaries(db)[0]?.customTitle).toBeNull();
+
+    expect(setConversationTitle(db, "does-not-exist", "x")).toBe(false);
   });
 });

@@ -189,6 +189,19 @@ describe("runBackfill", () => {
     expect(session.aiTitle).toBe("/code-review high. Verify I didn't leave any hanging files");
   });
 
+  it("keeps a user-set custom_title when the session is re-indexed (e.g. on app restart)", async () => {
+    const fx = seedFixture();
+    await runBackfill(db, { projectsDir: fixture.projectsDir });
+    db.prepare(`UPDATE sessions SET custom_title = 'Renamed by user' WHERE id = ?`).run(fx.mainSessionId);
+
+    await runBackfill(db, { projectsDir: fixture.projectsDir });
+
+    const session = db
+      .prepare(`SELECT ai_title as aiTitle, custom_title as customTitle FROM sessions WHERE id = ?`)
+      .get(fx.mainSessionId) as { aiTitle: string | null; customTitle: string | null };
+    expect(session).toEqual({ aiTitle: "My Test Session", customTitle: "Renamed by user" });
+  });
+
   it("returns an empty-but-successful summary when the projects dir doesn't exist", async () => {
     const summary = await runBackfill(db, { projectsDir: path.join(fixture.homeDir, "no-such-dir") });
     expect(summary.projectsFound).toBe(0);

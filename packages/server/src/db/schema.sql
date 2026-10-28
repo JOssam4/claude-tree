@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_indexed_at TEXT NOT NULL,
   last_byte_offset INTEGER NOT NULL DEFAULT 0,
   is_synthetic INTEGER NOT NULL DEFAULT 0, -- 1 = created by our own branch/resume action (not used yet, but included now)
-  hidden INTEGER NOT NULL DEFAULT 0 -- 1 = user hid this conversation from the sidebar (not deleted); never touched by the indexer's upserts
+  hidden INTEGER NOT NULL DEFAULT 0, -- 1 = user hid this conversation from the sidebar (not deleted); never touched by the indexer's upserts
+  custom_title TEXT -- user-set name overriding ai_title in the sidebar; never touched by the indexer's upserts (which do overwrite ai_title)
 );
 
 CREATE TABLE IF NOT EXISTS nodes (

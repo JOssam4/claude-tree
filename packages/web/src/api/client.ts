@@ -48,3 +48,15 @@ export async function setConversationHidden(sessionId: string, hidden: boolean):
     throw new Error(`PATCH hidden for ${sessionId} failed: ${res.status} ${res.statusText}`);
   }
 }
+
+/** Renames a conversation in the sidebar; null (or a blank string) clears the name back to its aiTitle. */
+export async function setConversationTitle(sessionId: string, title: string | null): Promise<void> {
+  const res = await fetch(`/api/conversations/${encodeURIComponent(sessionId)}/title`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    throw new Error(`PATCH title for ${sessionId} failed: ${res.status} ${res.statusText}`);
+  }
+}

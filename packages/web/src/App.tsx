@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMoon, faSun } from '@fortawesome/free-solid-svg-icons';
 import type { BranchResponseDTO, ConversationSummaryDTO, ProjectTreeDTO } from '@claude-tree/shared';
-import { branchFromNode, getConversations, getSessionTree, setConversationHidden } from './api/client';
+import { branchFromNode, getConversations, getSessionTree, setConversationHidden, setConversationTitle } from './api/client';
 import { useTreeUpdates } from './api/useTreeUpdates';
 import { ProjectList } from './components/ProjectList';
 import { TreeCanvas } from './components/TreeCanvas';
@@ -89,6 +89,17 @@ export const App = () => {
     });
   }, []);
 
+  // Renames a conversation in the sidebar (null clears it back to aiTitle).
+  // Optimistic with revert-on-failure, same as handleToggleHidden above.
+  const handleRename = useCallback((sessionId: string, title: string | null) => {
+    const previous = conversations.find((c) => c.sessionId === sessionId)?.customTitle ?? null;
+    setConversations((prev) => prev.map((c) => (c.sessionId === sessionId ? { ...c, customTitle: title } : c)));
+    setConversationTitle(sessionId, title).catch((e: Error) => {
+      setConversations((prev) => prev.map((c) => (c.sessionId === sessionId ? { ...c, customTitle: previous } : c)));
+      setError(e.message);
+    });
+  }, [conversations]);
+
   // Milestone 8: resolves to the resumeCommand, or null (after surfacing the error)
   // so the button can just skip copying rather than copy an error message.
   const handleCopyResumeCommand = useCallback(
@@ -123,6 +134,7 @@ export const App = () => {
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}
           onToggleHidden={handleToggleHidden}
+          onRename={handleRename}
         />
       </aside>
       <main className="app__main">

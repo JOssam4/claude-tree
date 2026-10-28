@@ -104,6 +104,27 @@ describe("API routes (Fastify .inject, temp fixture DB + fixture projects dir)",
     expect(body.some((c) => c.sessionId === newSessionId)).toBe(false);
   });
 
+  it("PATCH /api/conversations/:id/title renames and clears the name, and 404s for an unknown id", async () => {
+    const getConversation = async () => {
+      const res = await apiServer.app.inject({ method: "GET", url: "/api/conversations" });
+      return (res.json() as { sessionId: string; aiTitle: string | null; customTitle: string | null }[]).find(
+        (c) => c.sessionId === sessionId,
+      );
+    };
+    const patchTitle = (id: string, title: string | null) =>
+      apiServer.app.inject({ method: "PATCH", url: `/api/conversations/${id}/title`, payload: { title } });
+
+    const renamed = await patchTitle(sessionId, "Greeting test");
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json()).toEqual({ sessionId, customTitle: "Greeting test" });
+    expect(await getConversation()).toMatchObject({ aiTitle: "Say hello", customTitle: "Greeting test" });
+
+    expect((await patchTitle(sessionId, null)).statusCode).toBe(200);
+    expect((await getConversation())?.customTitle).toBeNull();
+
+    expect((await patchTitle(crypto.randomUUID(), "x")).statusCode).toBe(404);
+  });
+
   it("GET /api/sessions/:id/tree returns just that one session's tree, and 404 for an unknown id", async () => {
     const res = await apiServer.app.inject({ method: "GET", url: `/api/sessions/${sessionId}/tree` });
     expect(res.statusCode).toBe(200);

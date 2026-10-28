@@ -7,6 +7,7 @@ interface ProjectListProps {
   selectedSessionId: string | null;
   onSelect: (sessionId: string) => void;
   onToggleHidden: (sessionId: string, hidden: boolean) => void;
+  onRename: (sessionId: string, title: string | null) => void;
 }
 
 interface ProjectGroup {
@@ -37,7 +38,7 @@ function groupByProject(conversations: ConversationSummaryDTO[]): ProjectGroup[]
 }
 
 /** Sidebar listing every indexed conversation (root session), grouped by project (working directory); click one to render its tree. */
-export const ProjectList = ({ conversations, selectedSessionId, onSelect, onToggleHidden }: ProjectListProps) => {
+export const ProjectList = ({ conversations, selectedSessionId, onSelect, onToggleHidden, onRename }: ProjectListProps) => {
   const [showHidden, setShowHidden] = useState(false);
   const hiddenCount = conversations.filter((c) => c.isHidden).length;
   const visibleConversations = showHidden ? conversations : conversations.filter((c) => !c.isHidden);
@@ -54,6 +55,7 @@ export const ProjectList = ({ conversations, selectedSessionId, onSelect, onTogg
           selectedSessionId={selectedSessionId}
           onSelect={onSelect}
           onToggleHidden={onToggleHidden}
+          onRename={onRename}
         />
       ))}
       {hiddenCount > 0 ? (

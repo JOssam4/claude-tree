@@ -28,6 +28,7 @@ export function openDb(dbPath: string = DB_PATH): DB {
   db.exec(schema);
 
   addColumnIfMissing(db, "sessions", "hidden", "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "sessions", "custom_title", "TEXT");
 
   return db;
 }

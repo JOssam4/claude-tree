@@ -17,7 +17,7 @@ import { createPtyManager } from "../resume/ptyManager.js";
 import { buildResumeCommand } from "../resume/resumeCommand.js";
 import { forkSessionFromNode } from "../resume/sessionForker.js";
 import { getNodeDetail } from "./nodeDetail.js";
-import { listConversationSummaries, listProjectSummaries, setConversationHidden } from "./projectQueries.js";
+import { listConversationSummaries, listProjectSummaries, setConversationHidden, setConversationTitle } from "./projectQueries.js";
 import { buildProjectTree, buildSessionTree } from "./treeBuilder.js";
 
 const UUID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
@@ -80,6 +80,35 @@ export async function createApiServer(db: DB, webDistDir: string = WEB_DIST_DIR)
         return { error: `session not found: ${request.params.id}` };
       }
       return { sessionId: request.params.id, isHidden: request.body.hidden };
+    },
+  );
+
+  // Renames a conversation in the sidebar (null/blank clears the name, falling
+  // back to aiTitle) — a display preference persisted in this app's own DB
+  // (see setConversationTitle's doc comment).
+  app.patch<{ Params: { id: string }; Body: { title: string | null } }>(
+    "/api/conversations/:id/title",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string", pattern: UUID_PATTERN } },
+          required: ["id"],
+        },
+        body: {
+          type: "object",
+          properties: { title: { type: ["string", "null"], maxLength: 500 } },
+          required: ["title"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const changed = setConversationTitle(db, request.params.id, request.body.title);
+      if (!changed) {
+        reply.code(404);
+        return { error: `session not found: ${request.params.id}` };
+      }
+      return { sessionId: request.params.id, customTitle: request.body.title?.trim() || null };
     },
   );
 

@@ -8,10 +8,11 @@ interface ProjectProps {
   selectedSessionId: string | null;
   onSelect: (sessionId: string) => void;
   onToggleHidden: (sessionId: string, hidden: boolean) => void;
+  onRename: (sessionId: string, title: string | null) => void;
 }
 
 /** One collapsible project group: a header toggling the visibility of its conversation list. */
-export const Project = ({ projectCwd, conversations, selectedSessionId, onSelect, onToggleHidden }: ProjectProps) => {
+export const Project = ({ projectCwd, conversations, selectedSessionId, onSelect, onToggleHidden, onRename }: ProjectProps) => {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -33,6 +34,7 @@ export const Project = ({ projectCwd, conversations, selectedSessionId, onSelect
           selectedSessionId={selectedSessionId}
           onSelect={onSelect}
           onToggleHidden={onToggleHidden}
+          onRename={onRename}
         />
       )}
     </div>

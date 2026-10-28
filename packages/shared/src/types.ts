@@ -105,6 +105,13 @@ export interface ConversationSummaryDTO extends Pick<SessionDTO, "aiTitle" | "cr
    * this app's own DB — never deletes anything, and survives reloads/restarts.
    */
   isHidden: boolean;
+  /**
+   * User-set name for this conversation (see PATCH
+   * /api/conversations/:id/title), shown in place of aiTitle when set. Stored
+   * separately from aiTitle because the indexer rewrites aiTitle on every
+   * re-index, while this survives restarts.
+   */
+  customTitle: string | null;
 }
 
 /**
