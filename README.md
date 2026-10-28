@@ -11,12 +11,41 @@ A conversation tree manager for [Claude Code](https://claude.com/claude-code). I
   <img alt="Claude Tree showing a conversation that branches into several forks" src="docs/screenshot-light.png">
 </picture>
 
-## Prerequisites
+## Installation
+
+Download the latest desktop app from the [Releases page](https://github.com/JOssam4/claude-tree/releases/latest):
+
+- **macOS**: the `.dmg` (or `.zip`): `arm64` for Apple Silicon, `x64` for Intel
+- **Linux**: the AppImage, or the `.deb` for Debian/Ubuntu (both x64 and arm64 builds are available)
+- **Windows**: there is currently no windows build. If you use claude in WSL, grab the appropriate Linux release.
+
+You'll need an existing `claude` CLI install, reachable on `PATH` — Claude Tree uses it both for indexing your conversation history and for the resume/branch feature.
+
+The desktop app keeps its database in the platform's per-user app data directory, and only one instance runs at a time (launching it again focuses the existing window).
+
+## Branching
+
+Click a turn in the tree to see its action:
+- **⧉ copy resume command** — forks the conversation up to that point into a new session and copies a shell command (`cd '<project dir>' && claude --resume <new-session-id>`) to your clipboard so you can continue in your own terminal.
+
+## Safety notes
+
+This app only ever *reads* from `~/.claude/projects/`, with exactly one exception: branching creates a brand-new session file under a freshly-generated UUID, written with an exclusive-create flag so it can never overwrite an existing file. Nothing under `~/.claude/` is ever modified or deleted by this app.
+
+## Configuration
+
+- `CLAUDE_TREE_PORT` — override the backend's port (default `4317`); also respected by the desktop app
+
+## Development
+
+This section is for working on Claude Tree's code. To just use the app, see [Installation](#installation).
+
+### Prerequisites
 
 - Node.js 22+ (the exact version used for development is pinned in the root `package.json`)
-- An existing `claude` CLI install, reachable on `PATH` (used both for indexing your conversation history and for the resume/branch feature)
+- An existing `claude` CLI install, reachable on `PATH`
 
-## Getting started
+### Getting started
 
 ```bash
 npm install
@@ -40,7 +69,7 @@ For iterating on the backend itself, `npm run dev --workspace packages/server` r
 
 ### Desktop app
 
-Claude Tree can also run as an Electron desktop app, which starts the backend in-process and serves the built frontend from it — no separate terminals needed.
+The Electron desktop app starts the backend in-process and serves the built frontend from it — no separate terminals needed.
 
 ```bash
 # Build everything and launch the desktop app from source
@@ -50,16 +79,9 @@ npm run electron:dev
 npm run electron:package
 ```
 
-Packaging produces a `.dmg`/`.zip` on macOS, an AppImage and `.deb` on Linux, and an NSIS installer on Windows. The desktop app keeps its database in the platform's per-user app data directory, and only one instance runs at a time (launching it again focuses the existing window).
+Packaging produces a `.dmg`/`.zip` on macOS, an AppImage and `.deb` on Linux, and an NSIS installer on Windows.
 
-### Branching
-
-Click a turn in the tree to see its action:
-- **⧉ copy resume command** — forks the conversation up to that point into a new session and copies a shell command (`cd '<project dir>' && claude --resume <new-session-id>`) to your clipboard so you can continue in your own terminal.
-
-(There was previously also a "⑂ branch" button that opened a live embedded terminal instead of copying a command; it's removed for now since copy-resume-command covers the need, but the underlying fork/resume machinery it used is untouched — see the doc comments on `TurnNodeData.onCopyResumeCommand` in `packages/web/src/tree/turnGraph.ts` for exactly how to bring it back.)
-
-## Running tests
+### Running tests
 
 ```bash
 npm test
@@ -67,11 +89,7 @@ npm test
 
 Runs the full Vitest suite (unit + integration-style tests against fixture data). Tests never touch your real `~/.claude/` directory — they run against temporary fixture directories, guarded by a runtime check that refuses to operate on your real Claude home.
 
-## Safety notes
-
-This app only ever *reads* from `~/.claude/projects/`, with exactly one exception: branching creates a brand-new session file under a freshly-generated UUID, written with an exclusive-create flag so it can never overwrite an existing file. Nothing under `~/.claude/` is ever modified or deleted by this app.
-
-## Project structure
+### Project structure
 
 ```
 packages/
@@ -80,10 +98,6 @@ packages/
   web/      — React + @xyflow/react frontend
   electron/ — desktop app shell that runs the server in-process and opens the UI in a window
 ```
-
-## Configuration
-
-- `CLAUDE_TREE_PORT` — override the backend's port (default `4317`); also respected by the desktop app
 
 ## Known limitations
 
